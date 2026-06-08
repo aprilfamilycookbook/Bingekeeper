@@ -1,0 +1,10 @@
+name = "bingekeeper"
+main = "src/worker.js"
+compatibility_date = "2024-01-01"
+
+[site]
+bucket = "./src/public"
+
+[vars]
+# TMDB_API_KEY is set as a secret in the Cloudflare dashboard
+# Settings > Environment Variables > TMDB_API_KEY
