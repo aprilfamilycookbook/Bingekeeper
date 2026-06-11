@@ -5,3 +5,11 @@ compatibility_date = "2025-01-01"
 [assets]
 directory = "./src/public"
 binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "bingekeeper-db"
+database_id = "825e9598-004f-4c27-bde7-286ef889a1e2"
+
+[triggers]
+crons = ["0 9 * * *"]
