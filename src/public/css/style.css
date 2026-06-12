@@ -97,6 +97,28 @@ body {
   transition: border-color 0.15s;
 }
 .form-group input:focus { border-color: var(--accent); }
+.password-field {
+  position: relative;
+}
+.password-field input {
+  padding-right: 62px;
+}
+.password-toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 0;
+  background: transparent;
+  color: var(--accent2);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+.password-toggle:hover {
+  color: var(--text);
+}
 .form-hint { font-size: 13px; color: var(--text2); margin-bottom: 14px; }
 
 .form-error {

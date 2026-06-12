@@ -17,7 +17,7 @@
       <div id="loginForm" class="auth-card">
         <h2>Welcome back</h2>
         <div class="form-group"><label>Email</label><input type="email" id="loginEmail" placeholder="you@example.com"></div>
-        <div class="form-group"><label>Password</label><input type="password" id="loginPassword" placeholder="At least 8 characters"></div>
+        <div class="form-group"><label>Password</label><div class="password-field"><input type="password" id="loginPassword" placeholder="At least 8 characters"><button type="button" class="password-toggle" onclick="togglePassword('loginPassword', this)">Show</button></div></div>
         <div id="loginError" class="form-error hidden"></div>
         <button class="btn-primary btn-full" onclick="doLogin()">Sign in</button>
         <div class="auth-links">
@@ -29,7 +29,8 @@
         <h2>Create your account</h2>
         <div class="form-group"><label>Your name</label><input type="text" id="regName" placeholder="First name"></div>
         <div class="form-group"><label>Email</label><input type="email" id="regEmail" placeholder="you@example.com"></div>
-        <div class="form-group"><label>Password</label><input type="password" id="regPassword" placeholder="At least 8 characters"></div>
+        <div class="form-group"><label>Password</label><div class="password-field"><input type="password" id="regPassword" placeholder="At least 8 characters"><button type="button" class="password-toggle" onclick="togglePassword('regPassword', this)">Show</button></div></div>
+        <div class="form-group"><label>Confirm password</label><div class="password-field"><input type="password" id="regPasswordConfirm" placeholder="Re-enter password"><button type="button" class="password-toggle" onclick="togglePassword('regPasswordConfirm', this)">Show</button></div></div>
         <div id="regError" class="form-error hidden"></div>
         <div id="regSuccess" class="form-success hidden"></div>
         <button class="btn-primary btn-full" onclick="doRegister()">Create account</button>
@@ -46,7 +47,7 @@
       </div>
       <div id="resetForm" class="auth-card hidden">
         <h2>Set new password</h2>
-        <div class="form-group"><label>New password</label><input type="password" id="resetPassword" placeholder="At least 8 characters"></div>
+        <div class="form-group"><label>New password</label><div class="password-field"><input type="password" id="resetPassword" placeholder="At least 8 characters"><button type="button" class="password-toggle" onclick="togglePassword('resetPassword', this)">Show</button></div></div>
         <div id="resetError" class="form-error hidden"></div>
         <div id="resetSuccess" class="form-success hidden"></div>
         <button class="btn-primary btn-full" onclick="doReset()">Update password</button>

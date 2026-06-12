@@ -39,9 +39,11 @@ async function doRegister() {
   const name = document.getElementById('regName').value.trim();
   const email = document.getElementById('regEmail').value.trim();
   const password = document.getElementById('regPassword').value;
+  const passwordConfirm = document.getElementById('regPasswordConfirm').value;
   const errEl = document.getElementById('regError'); const successEl = document.getElementById('regSuccess');
   errEl.classList.add('hidden'); successEl.classList.add('hidden');
-  if (!name || !email || !password) { showError(errEl, 'Please fill in all fields'); return; }
+  if (!name || !email || !password || !passwordConfirm) { showError(errEl, 'Please fill in all fields'); return; }
+  if (password !== passwordConfirm) { showError(errEl, 'Passwords do not match'); return; }
   const btn = event.target; btn.disabled = true; btn.textContent = 'Creating account...';
   const res = await api('/api/auth/register', 'POST', { name, email, password });
   btn.disabled = false; btn.textContent = 'Create account';
@@ -138,6 +140,12 @@ document.addEventListener('click', e => { if (e.target===document.getElementById
 function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(window._toastTimer); window._toastTimer = setTimeout(() => t.classList.add('hidden'), 2800); }
 function showError(el, msg) { el.textContent = msg; el.classList.remove('hidden'); }
+function togglePassword(inputId, btn) {
+  const input = document.getElementById(inputId);
+  const isHidden = input.type === 'password';
+  input.type = isHidden ? 'text' : 'password';
+  btn.textContent = isHidden ? 'Hide' : 'Show';
+}
 async function api(path, method='GET', body=null) {
   try {
     const opts = { method, headers: { 'Content-Type': 'application/json' } };
