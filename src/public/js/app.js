@@ -136,12 +136,30 @@ async function removeShow(showId, name) {
   if (res.error) { toast(res.error); return; } await loadWatchlist(); toast(`"${name}" removed.`);
 }
 function render() {
+  renderDashboard();
   const allTabs = ['All', ...STATUSES];
   document.getElementById('tabs').innerHTML = allTabs.map(t => { const cnt = t==='All'?watchlist.length:watchlist.filter(s => s.status===t).length; return `<button class="tab${activeTab===t?' active':''}" onclick="setTab('${t}')">${t}<span class="tab-count">${cnt}</span></button>`; }).join('');
   const list = activeTab==='All'?watchlist:watchlist.filter(s => s.status===activeTab);
   const grid = document.getElementById('watchlistGrid');
-  if (!list.length) { grid.innerHTML = `<div class="empty-state"><span class="empty-icon">TV</span><h3>${watchlist.length===0?'Your watchlist is empty':'Nothing here yet'}</h3><p>${watchlist.length===0?'Search for a show above to get started!':'Add some shows to this category.'}</p></div>`; return; }
-  grid.innerHTML = list.map((s,i) => { const idx=watchlist.indexOf(s); const hasUpcoming=s.next_episode_date&&s.next_episode_date>=new Date().toISOString().slice(0,10); const nextLabel=s.next_episode_date?`S${s.next_season_number}E${s.next_episode_number} - ${s.next_episode_date}`:null; return `<div class="show-card">${s.poster_path?`<img class="show-poster" src="https://image.tmdb.org/t/p/w185${s.poster_path}" alt="${esc(s.name)}" loading="lazy">`:`<div class="show-poster-ph">TV</div>`}${hasUpcoming?`<div class="upcoming-badge">New Soon</div>`:''}<div class="show-body"><div class="show-title" title="${esc(s.name)}">${esc(s.name)}</div><div class="show-badges"><span class="badge ${STATUS_BADGE[s.status]||'b-watching'}">${s.status}</span><span class="badge b-service">${esc(s.service)}</span></div><div class="show-progress">S${s.current_season} - E${s.current_episode}</div>${nextLabel?`<div class="show-next">${nextLabel}</div>`:''}<div class="show-actions"><button class="btn-sm" onclick="openEdit(${idx})">Edit</button><button class="btn-sm btn-sm-danger" onclick="removeShow(${s.show_id},'${esc(s.name)}')">Remove</button></div></div></div>`; }).join('');
+  if (!list.length) { grid.innerHTML = `<div class="empty-state"><span class="empty-icon">TV</span><h3>${watchlist.length===0?'Build your first watchlist':'Nothing here yet'}</h3><p>${watchlist.length===0?'Search for a show above, add where you watch it, and Bingekeeper will keep an eye on new episodes.':'Try another status tab or add a show to this category.'}</p><button class="btn-primary" onclick="document.getElementById('searchInput').focus()">Start searching</button></div>`; return; }
+  grid.innerHTML = list.map((s,i) => { const idx=watchlist.indexOf(s); const hasUpcoming=s.next_episode_date&&s.next_episode_date>=todayString(); const nextLabel=s.next_episode_date?`S${s.next_season_number}E${s.next_episode_number} - ${formatAirDate(s.next_episode_date)}`:null; return `<div class="show-card">${s.poster_path?`<img class="show-poster" src="https://image.tmdb.org/t/p/w185${s.poster_path}" alt="${esc(s.name)}" loading="lazy">`:`<div class="show-poster-ph">TV</div>`}${hasUpcoming?`<div class="upcoming-badge">${daysUntilLabel(s.next_episode_date)}</div>`:''}<div class="show-body"><div class="show-title" title="${esc(s.name)}">${esc(s.name)}</div><div class="show-badges"><span class="badge ${STATUS_BADGE[s.status]||'b-watching'}">${s.status}</span><span class="badge b-service">${esc(s.service)}</span></div><div class="show-progress">Season ${s.current_season || 1}, episode ${s.current_episode || 1}</div>${nextLabel?`<div class="show-next">${nextLabel}</div>`:''}<div class="show-actions"><button class="btn-sm" onclick="openEdit(${idx})">Edit</button><button class="btn-sm btn-sm-danger" onclick="removeShow(${s.show_id},'${esc(s.name)}')">Remove</button></div></div></div>`; }).join('');
+}
+function renderDashboard() {
+  const watching = watchlist.filter(s => s.status === 'Watching').length;
+  const upcoming = watchlist.filter(s => s.next_episode_date && s.next_episode_date >= todayString()).sort((a,b) => a.next_episode_date.localeCompare(b.next_episode_date));
+  document.getElementById('dashboardGreeting').textContent = watchlist.length ? `Welcome back, ${currentUser.name}` : 'Start your watchlist';
+  document.getElementById('dashboardSubcopy').textContent = watchlist.length ? `${watching} ${plural(watching, 'show')} in progress. ${upcoming.length} upcoming ${plural(upcoming.length, 'episode')} on the radar.` : 'Add a few shows and this page becomes your personal release calendar.';
+  document.getElementById('statsGrid').innerHTML = [
+    ['Total', watchlist.length],
+    ['Watching', watching],
+    ['Upcoming', upcoming.length]
+  ].map(([label, value]) => `<div class="stat-card"><span>${label}</span><strong>${value}</strong></div>`).join('');
+
+  const section = document.getElementById('upcomingSection');
+  const list = document.getElementById('upcomingList');
+  if (!upcoming.length) { section.classList.add('hidden'); list.innerHTML = ''; return; }
+  section.classList.remove('hidden');
+  list.innerHTML = upcoming.slice(0, 4).map(s => `<div class="upcoming-item">${s.poster_path?`<img src="https://image.tmdb.org/t/p/w92${s.poster_path}" alt="${esc(s.name)}">`:`<div class="upcoming-poster">TV</div>`}<div><strong>${esc(s.name)}</strong><span>${daysUntilLabel(s.next_episode_date)} - S${s.next_season_number || '?'}E${s.next_episode_number || '?'}</span></div></div>`).join('');
 }
 function setTab(t) { activeTab = t; render(); }
 function openModal() { document.getElementById('modal').classList.remove('hidden'); }
@@ -150,6 +168,19 @@ document.addEventListener('click', e => { if (e.target===document.getElementById
 function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(window._toastTimer); window._toastTimer = setTimeout(() => t.classList.add('hidden'), 2800); }
 function showError(el, msg) { el.textContent = msg; el.classList.remove('hidden'); }
+function todayString() { return new Date().toISOString().slice(0,10); }
+function plural(count, word) { return count === 1 ? word : `${word}s`; }
+function formatAirDate(date) {
+  return new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+function daysUntilLabel(date) {
+  const now = new Date(`${todayString()}T00:00:00`);
+  const air = new Date(`${date}T00:00:00`);
+  const days = Math.round((air - now) / 86400000);
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Tomorrow';
+  return `${days} days`;
+}
 function togglePassword(inputId, btn) {
   const input = document.getElementById(inputId);
   const isHidden = input.type === 'password';

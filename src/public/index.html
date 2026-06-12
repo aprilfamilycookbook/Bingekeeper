@@ -14,6 +14,10 @@
         Binge<span>keeper</span>
       </div>
       <p class="auth-tagline">Track your shows. Never miss an episode.</p>
+      <div class="auth-preview" aria-hidden="true">
+        <div><strong>Tonight</strong><span>2 new episodes</span></div>
+        <div><strong>Watching</strong><span>12 shows kept tidy</span></div>
+      </div>
       <div id="loginForm" class="auth-card">
         <h2>Welcome back</h2>
         <div class="form-group"><label>Email</label><input type="email" id="loginEmail" placeholder="you@example.com"></div>
@@ -74,7 +78,30 @@
       </div>
     </header>
     <main>
+      <section class="dashboard-hero">
+        <div>
+          <p class="eyebrow">Your watch queue</p>
+          <h1 id="dashboardGreeting">Tonight's lineup</h1>
+          <p id="dashboardSubcopy">Search for shows, track where you watch them, and let Bingekeeper watch the calendar.</p>
+        </div>
+        <div class="stats-grid" id="statsGrid"></div>
+      </section>
+      <section class="upcoming-section hidden" id="upcomingSection">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Next up</p>
+            <h2>Upcoming episodes</h2>
+          </div>
+        </div>
+        <div class="upcoming-list" id="upcomingList"></div>
+      </section>
       <div class="search-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Add a show</p>
+            <h2>Find something to track</h2>
+          </div>
+        </div>
         <div class="search-bar">
           <input type="text" id="searchInput" placeholder="Search for a TV show to add..." autocomplete="off">
           <button class="btn-primary" id="searchBtn" onclick="doSearch()">Search</button>
