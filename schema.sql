@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS shows (
   last_checked INTEGER DEFAULT 0
 );
 
--- Watchlist table (user <-> show relationship)
+-- Watchlist table (user-show relationship)
 CREATE TABLE IF NOT EXISTS watchlist (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS watchlist (
   UNIQUE(user_id, show_id)
 );
 
--- Notification log (so we don't spam)
+-- Notification log
 CREATE TABLE IF NOT EXISTS notifications_sent (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,

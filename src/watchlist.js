@@ -33,7 +33,7 @@ export async function handleWatchlist(request, env, path) {
   if (match && request.method === 'PUT') {
     const showId = parseInt(match[1]);
     const { status, service, current_season, current_episode, notify } = await request.json();
-    await env.DB.prepare(`UPDATE watchlist SET tatus=?, service=?, current_season=?, current_episode=?, notify=? WHERE user_id=? AND show_id=?`).bind(status, service, current_season, current_episode, notify ? 1 : 0, user.userId, showId).run();
+    await env.DB.prepare(`UPDATE watchlist SET status=?, service=?, current_season=?, current_episode=?, notify=? WHERE user_id=? AND show_id=?`).bind(status, service, current_season, current_episode, notify ? 1 : 0, user.userId, showId).run();
     return jsonResponse({ message: 'Updated' });
   }
 
