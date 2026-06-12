@@ -57,6 +57,17 @@ export async function handleAuth(request, env, path) {
     return jsonResponse({ user: { id: user.id, email: user.email, name: user.name, plan: user.plan || 'free', subscription_status: user.subscription_status || null } });
   }
 
+  if (path === '/api/auth/account' && request.method === 'DELETE') {
+    const auth = request.headers.get('Authorization');
+    if (!auth || !auth.startsWith('Bearer ')) return jsonResponse({ error: 'Unauthorized' }, 401);
+    const tokenUser = await verifyJWT(auth.slice(7), env.JWT_SECRET);
+    if (!tokenUser) return jsonResponse({ error: 'Unauthorized' }, 401);
+    await env.DB.prepare('DELETE FROM notifications_sent WHERE user_id = ?').bind(tokenUser.userId).run();
+    await env.DB.prepare('DELETE FROM watchlist WHERE user_id = ?').bind(tokenUser.userId).run();
+    await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(tokenUser.userId).run();
+    return jsonResponse({ message: 'Account deleted' });
+  }
+
   if (path === '/api/auth/register' && request.method === 'POST') {
     const { email, password, name } = body;
     if (!email || !password || !name) return jsonResponse({ error: 'All fields required' }, 400);

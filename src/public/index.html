@@ -61,6 +61,25 @@
         <h2>Verifying your email...</h2>
         <div id="verifyMsg" class="form-hint">Please wait.</div>
       </div>
+      <div class="public-links">
+        <a href="#plus" onclick="showPublicPage('plus')">Plus</a>
+        <a href="#support" onclick="showPublicPage('support')">Support</a>
+        <a href="#privacy" onclick="showPublicPage('privacy')">Privacy</a>
+        <a href="#terms" onclick="showPublicPage('terms')">Terms</a>
+      </div>
+    </div>
+  </div>
+
+  <div id="publicPage" class="public-page hidden">
+    <div class="public-shell">
+      <div class="public-topbar">
+        <div class="logo">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>
+          Binge<span>keeper</span>
+        </div>
+        <button class="btn-ghost" onclick="showAuth()">Sign in</button>
+      </div>
+      <article class="public-card" id="publicContent"></article>
     </div>
   </div>
 
@@ -74,6 +93,7 @@
         <div class="header-right">
           <span id="planBadge" class="plan-badge">Free</span>
           <button class="btn-ghost" id="billingBtn" onclick="openBilling()">Upgrade</button>
+          <button class="btn-ghost" onclick="openAccount()">Account</button>
           <span id="headerName" class="header-name"></span>
           <button class="btn-ghost" onclick="doLogout()">Sign out</button>
         </div>
@@ -122,6 +142,12 @@
         <div class="tabs" id="tabs"></div>
         <div id="watchlistGrid" class="watchlist-grid"></div>
       </div>
+      <footer class="app-footer">
+        <a href="#plus" onclick="showPublicPage('plus')">Plus</a>
+        <a href="#support" onclick="showPublicPage('support')">Support</a>
+        <a href="#privacy" onclick="showPublicPage('privacy')">Privacy</a>
+        <a href="#terms" onclick="showPublicPage('terms')">Terms</a>
+      </footer>
     </main>
   </div>
 
@@ -131,7 +157,7 @@
         <h2 id="modalTitle"></h2>
         <button class="modal-close" onclick="closeModal()">&times;</button>
       </div>
-      <div id="modalBody"></div>
+      <div id="modalBody" class="modal-body"></div>
     </div>
   </div>
 

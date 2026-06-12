@@ -2,6 +2,28 @@
 const SERVICES = ['Netflix','Max','Hulu','Disney+','Apple TV+','Peacock','Paramount+','Amazon Prime','Other'];
 const STATUSES = ['Watching','Plan to Watch','Completed','On Hold','Dropped'];
 const STATUS_BADGE = { 'Watching':'b-watching','Plan to Watch':'b-plan','Completed':'b-completed','On Hold':'b-hold','Dropped':'b-dropped' };
+const PUBLIC_PAGES = {
+  plus: {
+    title: 'Bingekeeper Plus',
+    eyebrow: 'Pricing',
+    body: `<p>Track the shows you care about, remember where you watch them, and get a clean view of upcoming episodes.</p><div class="pricing-grid"><div><h3>Free</h3><strong>$0</strong><p>Track up to 20 shows, including status, streaming service, season, episode, and upcoming episode details.</p></div><div class="featured"><h3>Plus</h3><strong>Monthly</strong><p>Unlimited show tracking and self-service billing through Stripe. The final price is shown securely at checkout.</p><button class="btn-primary" onclick="openBillingFromPublic()">Upgrade to Plus</button></div></div>`
+  },
+  support: {
+    title: 'Support',
+    eyebrow: 'Help',
+    body: `<p>Need help with your account, billing, email verification, or show tracking? Email <a href="mailto:hello@bingekeeper.tv">hello@bingekeeper.tv</a>.</p><p>A dedicated customer service number can be added here once your business phone line is active.</p>`
+  },
+  privacy: {
+    title: 'Privacy Policy',
+    eyebrow: 'Effective June 12, 2026',
+    body: `<p>Bingekeeper stores the account details needed to run the service: your name, email address, password hash, verification status, subscription status, and watchlist data.</p><p>Payments are handled by Stripe. Bingekeeper does not store full card numbers. Email delivery is handled by Resend, and show data comes from TMDB.</p><p>Your data is used to provide account access, email verification, password resets, episode reminders, watchlist features, and billing status. To request help or deletion, contact <a href="mailto:hello@bingekeeper.tv">hello@bingekeeper.tv</a>.</p>`
+  },
+  terms: {
+    title: 'Terms of Service',
+    eyebrow: 'Effective June 12, 2026',
+    body: `<p>Bingekeeper is provided as a show-tracking tool. You are responsible for keeping your login information secure and for using the service lawfully.</p><p>Plus subscriptions are billed through Stripe and can be managed from the app. Free accounts may be limited to 20 tracked shows.</p><p>Bingekeeper depends on third-party services for payments, email, hosting, and show metadata. The service may change as those services or the product evolve.</p>`
+  }
+};
 
 let token = localStorage.getItem('bk_token');
 let currentUser = JSON.parse(localStorage.getItem('bk_user') || 'null');
@@ -13,6 +35,7 @@ window.addEventListener('DOMContentLoaded', () => {
   if (billingResult === '#billing=cancelled') toast('Upgrade cancelled.');
   if (route.name === 'verify' && route.token) { showVerify(route.token);
   } else if (route.name === 'reset' && route.token) { showReset(route.token);
+  } else if (PUBLIC_PAGES[billingResult.slice(1)]) { showPublicPage(billingResult.slice(1));
   } else if (token && currentUser) { showApp(billingResult === '#billing=success');
   } else { showAuth(); }
 });
@@ -26,7 +49,12 @@ function getAuthRoute() {
   if (params.get('token') && window.location.pathname === '/reset') return { name: 'reset', token: params.get('token') };
   return { name: '', token: '' };
 }
-function showAuth() { document.getElementById('authPage').classList.remove('hidden'); document.getElementById('appPage').classList.add('hidden'); showLogin(); }
+function showAuth() {
+  document.getElementById('authPage').classList.remove('hidden');
+  document.getElementById('appPage').classList.add('hidden');
+  document.getElementById('publicPage').classList.add('hidden');
+  showLogin();
+}
 function showLogin() { hideAllAuthForms(); document.getElementById('loginForm').classList.remove('hidden'); }
 function showRegister() { hideAllAuthForms(); document.getElementById('registerForm').classList.remove('hidden'); }
 function showForgot() { hideAllAuthForms(); document.getElementById('forgotForm').classList.remove('hidden'); }
@@ -90,7 +118,7 @@ async function verifyEmail(t) {
 }
 function doLogout() { token = null; currentUser = null; localStorage.removeItem('bk_token'); localStorage.removeItem('bk_user'); watchlist = []; showAuth(); }
 async function showApp(fromBilling = false) {
-  document.getElementById('authPage').classList.add('hidden'); document.getElementById('appPage').classList.remove('hidden');
+  document.getElementById('authPage').classList.add('hidden'); document.getElementById('publicPage').classList.add('hidden'); document.getElementById('appPage').classList.remove('hidden');
   await refreshCurrentUser();
   if (fromBilling) toast(currentUser?.plan === 'plus' ? 'Welcome to Plus!' : 'Plus is processing. Your account will update shortly.');
   if (fromBilling) window.history.replaceState(null, '', '/');
@@ -187,6 +215,32 @@ async function openBilling() {
   const res = await api(path, 'POST');
   if (res.error) { toast(res.error); return; }
   if (res.url) window.location.href = res.url;
+}
+function openBillingFromPublic() {
+  if (!token || !currentUser) { showAuth(); toast('Sign in to upgrade.'); return; }
+  showApp().then(() => openBilling());
+}
+function showPublicPage(page) {
+  const content = PUBLIC_PAGES[page] || PUBLIC_PAGES.plus;
+  document.getElementById('authPage').classList.add('hidden');
+  document.getElementById('appPage').classList.add('hidden');
+  document.getElementById('publicPage').classList.remove('hidden');
+  document.getElementById('publicContent').innerHTML = `<p class="eyebrow">${content.eyebrow}</p><h1>${content.title}</h1>${content.body}`;
+  window.history.replaceState(null, '', `#${page}`);
+}
+function openAccount() {
+  const isPlus = currentUser?.plan === 'plus';
+  document.getElementById('modalTitle').textContent = 'Account';
+  document.getElementById('modalBody').innerHTML = `<div class="account-panel"><div><span>Name</span><strong>${esc(currentUser.name)}</strong></div><div><span>Email</span><strong>${esc(currentUser.email)}</strong></div><div><span>Plan</span><strong>${isPlus ? 'Plus' : 'Free'}</strong></div></div><div class="modal-actions stacked"><button class="btn-save" onclick="openBilling()">${isPlus ? 'Manage Plus' : 'Upgrade to Plus'}</button><button class="btn-cancel" onclick="closeModal()">Close</button><button class="btn-danger" onclick="deleteAccount()">Delete account</button></div>`;
+  openModal();
+}
+async function deleteAccount() {
+  const phrase = prompt('Type DELETE to permanently delete your Bingekeeper account.');
+  if (phrase !== 'DELETE') return;
+  const res = await api('/api/auth/account', 'DELETE');
+  if (res.error) { toast(res.error); return; }
+  doLogout();
+  toast('Account deleted.');
 }
 function setTab(t) { activeTab = t; render(); }
 function openModal() { document.getElementById('modal').classList.remove('hidden'); }
