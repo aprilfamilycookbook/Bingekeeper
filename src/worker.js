@@ -27,6 +27,11 @@ export default {
     } else if (path.startsWith('/api/search')) {
       response = await handleSearch(request, env, url);
     } else if (!path.startsWith('/api/')) {
+      if (request.method === 'GET' && !path.split('/').pop().includes('.')) {
+        const indexUrl = new URL('/index.html', request.url);
+        return env.ASSETS.fetch(new Request(indexUrl, request));
+      }
+
       const assetResponse = await env.ASSETS.fetch(request);
       if (assetResponse.status !== 404 || request.method !== 'GET') {
         return assetResponse;
