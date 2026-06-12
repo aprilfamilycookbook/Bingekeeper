@@ -27,7 +27,13 @@ export default {
     } else if (path.startsWith('/api/search')) {
       response = await handleSearch(request, env, url);
     } else if (!path.startsWith('/api/')) {
-      return env.ASSETS.fetch(request);
+      const assetResponse = await env.ASSETS.fetch(request);
+      if (assetResponse.status !== 404 || request.method !== 'GET') {
+        return assetResponse;
+      }
+
+      const indexUrl = new URL('/index.html', request.url);
+      return env.ASSETS.fetch(new Request(indexUrl, request));
     } else {
       response = new Response(JSON.stringify({ error: 'Not found' }), { status: 404 });
     }
