@@ -9,6 +9,10 @@ CREATE TABLE IF NOT EXISTS users (
   reset_token TEXT,
   reset_expires INTEGER,
   notify_email INTEGER DEFAULT 1,
+  plan TEXT DEFAULT 'free',
+  stripe_customer_id TEXT,
+  stripe_subscription_id TEXT,
+  subscription_status TEXT,
   created_at INTEGER DEFAULT (unixepoch())
 );
 

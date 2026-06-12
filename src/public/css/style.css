@@ -251,6 +251,19 @@ header {
 
 .header-right { display: flex; align-items: center; gap: 12px; }
 .header-name { font-size: 14px; color: var(--text2); }
+.plan-badge {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text2);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 9px;
+}
+.plan-badge.is-plus {
+  color: #111318;
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--gold), var(--cyan));
+}
 
 /* MAIN */
 main { max-width: 1180px; margin: 0 auto; padding: 1.5rem; }
@@ -290,6 +303,25 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.5rem; }
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
+}
+
+.plus-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 1.4rem;
+  padding: 18px 20px;
+  border: 1px solid rgba(246,195,91,0.28);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(246,195,91,0.13), rgba(108,99,255,0.12)), var(--bg2);
+}
+.plus-banner h2 {
+  font-size: 18px;
+}
+.plus-banner p:not(.eyebrow) {
+  color: var(--text2);
+  font-size: 14px;
 }
 .stat-card {
   border: 1px solid var(--border);
@@ -667,6 +699,9 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); c
   .stat-card strong { font-size: 22px; }
   .upcoming-list { grid-template-columns: 1fr; }
   .search-bar { flex-direction: column; }
+  .header-right { gap: 7px; }
+  .header-name { display: none; }
+  .plus-banner { align-items: stretch; flex-direction: column; }
 }
 
 @media (min-width: 601px) and (max-width: 920px) {

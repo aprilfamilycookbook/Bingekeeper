@@ -22,6 +22,11 @@ export async function handleWatchlist(request, env, path) {
   if (path === '/api/watchlist' && request.method === 'POST') {
     const { show_id, name, poster_path, overview, first_air_date, status, service, current_season, current_episode } = await request.json();
     if (!show_id || !name) return jsonResponse({ error: 'show_id and name required' }, 400);
+    const account = await env.DB.prepare('SELECT plan FROM users WHERE id = ?').bind(user.userId).first();
+    if ((account?.plan || 'free') !== 'plus') {
+      const count = await env.DB.prepare('SELECT COUNT(*) as total FROM watchlist WHERE user_id = ?').bind(user.userId).first();
+      if ((count?.total || 0) >= 20) return jsonResponse({ error: 'Free accounts can track up to 20 shows. Upgrade to Plus for unlimited tracking.' }, 402);
+    }
     await env.DB.prepare(`INSERT INTO shows (id, name, poster_path, overview, first_air_date) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, poster_path=excluded.poster_path`).bind(show_id, name, poster_path || null, overview || null, first_air_date || null).run();
     try {
       await env.DB.prepare(`INSERT INTO watchlist (user_id, show_id, status, service, current_season, current_episode) VALUES (?, ?, ?, ?, ?, ?)`).bind(user.userId, show_id, status || 'Watching', service || 'Other', current_season || 1, current_episode || 1).run();

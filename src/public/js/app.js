@@ -9,9 +9,11 @@ let watchlist = [];
 let activeTab = 'All';
 window.addEventListener('DOMContentLoaded', () => {
   const route = getAuthRoute();
+  const billingResult = window.location.hash;
+  if (billingResult === '#billing=cancelled') toast('Upgrade cancelled.');
   if (route.name === 'verify' && route.token) { showVerify(route.token);
   } else if (route.name === 'reset' && route.token) { showReset(route.token);
-  } else if (token && currentUser) { showApp();
+  } else if (token && currentUser) { showApp(billingResult === '#billing=success');
   } else { showAuth(); }
 });
 function getAuthRoute() {
@@ -87,12 +89,23 @@ async function verifyEmail(t) {
   } else { msg.style.color = '#22c55e'; msg.textContent = res.message + ' Redirecting to login...'; setTimeout(() => { window.location.href = '/'; }, 2500); }
 }
 function doLogout() { token = null; currentUser = null; localStorage.removeItem('bk_token'); localStorage.removeItem('bk_user'); watchlist = []; showAuth(); }
-async function showApp() {
+async function showApp(fromBilling = false) {
   document.getElementById('authPage').classList.add('hidden'); document.getElementById('appPage').classList.remove('hidden');
+  await refreshCurrentUser();
+  if (fromBilling) toast(currentUser?.plan === 'plus' ? 'Welcome to Plus!' : 'Plus is processing. Your account will update shortly.');
+  if (fromBilling) window.history.replaceState(null, '', '/');
   document.getElementById('headerName').textContent = currentUser.name;
+  syncBillingUi();
   document.getElementById('searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); if (e.key === 'Escape') closeSearch(); });
   document.addEventListener('click', e => { const sr = document.getElementById('searchResults'); if (!sr.contains(e.target) && e.target !== document.getElementById('searchInput') && e.target !== document.getElementById('searchBtn')) { sr.classList.add('hidden'); } });
   await loadWatchlist();
+}
+async function refreshCurrentUser() {
+  const res = await api('/api/auth/me', 'GET');
+  if (!res.error && res.user) {
+    currentUser = res.user;
+    localStorage.setItem('bk_user', JSON.stringify(currentUser));
+  }
 }
 async function loadWatchlist() { const res = await api('/api/watchlist', 'GET'); if (res.error) { toast('Failed to load watchlist'); return; } watchlist = res.watchlist || []; render(); }
 async function doSearch() {
@@ -115,7 +128,7 @@ function openAdd(show) {
 async function confirmAdd(show) {
   const body = { show_id:show.id, name:show.name, poster_path:show.poster_path||null, overview:show.overview||null, first_air_date:show.first_air_date||null, status:document.getElementById('f-status').value, service:document.getElementById('f-service').value, current_season:parseInt(document.getElementById('f-season').value)||1, current_episode:parseInt(document.getElementById('f-episode').value)||1, notify:document.getElementById('f-notify').checked };
   const res = await api('/api/watchlist', 'POST', body);
-  if (res.error) { toast(res.error); return; }
+  if (res.error) { toast(res.error); if (res.error.includes('Upgrade')) document.getElementById('plusBanner').classList.remove('hidden'); return; }
   closeModal(); closeSearch(); await loadWatchlist(); activeTab = 'All'; render(); toast(`"${show.name}" added!`);
 }
 function openEdit(idx) {
@@ -147,6 +160,8 @@ function render() {
 function renderDashboard() {
   const watching = watchlist.filter(s => s.status === 'Watching').length;
   const upcoming = watchlist.filter(s => s.next_episode_date && s.next_episode_date >= todayString()).sort((a,b) => a.next_episode_date.localeCompare(b.next_episode_date));
+  const isPlus = currentUser?.plan === 'plus';
+  document.getElementById('plusBanner').classList.toggle('hidden', isPlus || watchlist.length < 16);
   document.getElementById('dashboardGreeting').textContent = watchlist.length ? `Welcome back, ${currentUser.name}` : 'Start your watchlist';
   document.getElementById('dashboardSubcopy').textContent = watchlist.length ? `${watching} ${plural(watching, 'show')} in progress. ${upcoming.length} upcoming ${plural(upcoming.length, 'episode')} on the radar.` : 'Add a few shows and this page becomes your personal release calendar.';
   document.getElementById('statsGrid').innerHTML = [
@@ -160,6 +175,18 @@ function renderDashboard() {
   if (!upcoming.length) { section.classList.add('hidden'); list.innerHTML = ''; return; }
   section.classList.remove('hidden');
   list.innerHTML = upcoming.slice(0, 4).map(s => `<div class="upcoming-item">${s.poster_path?`<img src="https://image.tmdb.org/t/p/w92${s.poster_path}" alt="${esc(s.name)}">`:`<div class="upcoming-poster">TV</div>`}<div><strong>${esc(s.name)}</strong><span>${daysUntilLabel(s.next_episode_date)} - S${s.next_season_number || '?'}E${s.next_episode_number || '?'}</span></div></div>`).join('');
+}
+function syncBillingUi() {
+  const isPlus = currentUser?.plan === 'plus';
+  document.getElementById('planBadge').textContent = isPlus ? 'Plus' : 'Free';
+  document.getElementById('planBadge').classList.toggle('is-plus', isPlus);
+  document.getElementById('billingBtn').textContent = isPlus ? 'Manage Plus' : 'Upgrade';
+}
+async function openBilling() {
+  const path = currentUser?.plan === 'plus' ? '/api/billing/portal' : '/api/billing/checkout';
+  const res = await api(path, 'POST');
+  if (res.error) { toast(res.error); return; }
+  if (res.url) window.location.href = res.url;
 }
 function setTab(t) { activeTab = t; render(); }
 function openModal() { document.getElementById('modal').classList.remove('hidden'); }

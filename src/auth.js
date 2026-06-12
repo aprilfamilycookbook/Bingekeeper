@@ -47,6 +47,16 @@ export async function verifyJWT(token, secret) {
 export async function handleAuth(request, env, path) {
   const body = request.method === 'POST' ? await request.json().catch(() => ({})) : {};
 
+  if (path === '/api/auth/me' && request.method === 'GET') {
+    const auth = request.headers.get('Authorization');
+    if (!auth || !auth.startsWith('Bearer ')) return jsonResponse({ error: 'Unauthorized' }, 401);
+    const tokenUser = await verifyJWT(auth.slice(7), env.JWT_SECRET);
+    if (!tokenUser) return jsonResponse({ error: 'Unauthorized' }, 401);
+    const user = await env.DB.prepare('SELECT id, email, name, plan, subscription_status FROM users WHERE id = ?').bind(tokenUser.userId).first();
+    if (!user) return jsonResponse({ error: 'User not found' }, 404);
+    return jsonResponse({ user: { id: user.id, email: user.email, name: user.name, plan: user.plan || 'free', subscription_status: user.subscription_status || null } });
+  }
+
   if (path === '/api/auth/register' && request.method === 'POST') {
     const { email, password, name } = body;
     if (!email || !password || !name) return jsonResponse({ error: 'All fields required' }, 400);
@@ -70,7 +80,7 @@ export async function handleAuth(request, env, path) {
     if (hash !== user.password_hash) return jsonResponse({ error: 'Invalid email or password' }, 401);
     if (!user.verified) return jsonResponse({ error: 'Please verify your email first. Check your inbox.' }, 403);
     const jwt = await createJWT(user.id, user.email, env.JWT_SECRET);
-    return jsonResponse({ token: jwt, user: { id: user.id, email: user.email, name: user.name } });
+    return jsonResponse({ token: jwt, user: { id: user.id, email: user.email, name: user.name, plan: user.plan || 'free', subscription_status: user.subscription_status || null } });
   }
 
   if (path === '/api/auth/verify' && request.method === 'POST') {

@@ -72,6 +72,8 @@
           Binge<span>keeper</span>
         </div>
         <div class="header-right">
+          <span id="planBadge" class="plan-badge">Free</span>
+          <button class="btn-ghost" id="billingBtn" onclick="openBilling()">Upgrade</button>
           <span id="headerName" class="header-name"></span>
           <button class="btn-ghost" onclick="doLogout()">Sign out</button>
         </div>
@@ -85,6 +87,14 @@
           <p id="dashboardSubcopy">Search for shows, track where you watch them, and let Bingekeeper watch the calendar.</p>
         </div>
         <div class="stats-grid" id="statsGrid"></div>
+      </section>
+      <section class="plus-banner hidden" id="plusBanner">
+        <div>
+          <p class="eyebrow">Bingekeeper Plus</p>
+          <h2>Unlimited show tracking</h2>
+          <p>Free accounts can track 20 shows. Upgrade when your queue gets serious.</p>
+        </div>
+        <button class="btn-primary" onclick="openBilling()">Upgrade to Plus</button>
       </section>
       <section class="upcoming-section hidden" id="upcomingSection">
         <div class="section-heading">

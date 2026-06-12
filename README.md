@@ -23,6 +23,9 @@ Then fill in:
 - `TMDB_API_KEY`
 - `JWT_SECRET`
 - `RESEND_API_KEY`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_PLUS_PRICE_ID`
 
 Run locally:
 
@@ -65,4 +68,6 @@ Add these GitHub Actions secrets before relying on automatic deploys:
 
 The current Cloudflare Worker has a TMDB secret named `TMDB_API_KEY ` with a trailing space. The Worker code supports both `TMDB_API_KEY` and `TMDB_API_KEY ` so the existing deployment keeps working, but the clean long-term fix is to recreate that secret as `TMDB_API_KEY`.
 
-The live D1 database originally had an older schema. It was updated on 2026-06-12 to add the `users.name`, `users.verified`, `users.verify_token`, `users.reset_token`, `users.reset_expires`, `watchlist.current_season`, `watchlist.current_episode`, and `watchlist.notify` columns required by the current Worker.
+The live D1 database originally had an older schema. It was updated on 2026-06-12 to add the `users.name`, `users.verified`, `users.verify_token`, `users.reset_token`, `users.reset_expires`, `watchlist.current_season`, `watchlist.current_episode`, and `watchlist.notify` columns required by the current Worker. It was also updated with `users.plan`, `users.stripe_customer_id`, `users.stripe_subscription_id`, and `users.subscription_status` for Plus billing.
+
+Plus billing uses Stripe Checkout. Add these Cloudflare Worker values before enabling paid upgrades: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PLUS_PRICE_ID`. Configure the Stripe webhook endpoint as `https://bingekeeper.tv/api/stripe/webhook`.

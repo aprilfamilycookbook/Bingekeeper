@@ -2,6 +2,7 @@ import { handleAuth } from './auth.js';
 import { handleWatchlist } from './watchlist.js';
 import { handleSearch } from './search.js';
 import { handleCron } from './cron.js';
+import { handleBilling, handleStripeWebhook } from './billing.js';
 
 export default {
   async fetch(request, env) {
@@ -20,8 +21,12 @@ export default {
 
     let response;
 
-    if (path.startsWith('/api/auth/')) {
+    if (path === '/api/stripe/webhook') {
+      response = await handleStripeWebhook(request, env);
+    } else if (path.startsWith('/api/auth/')) {
       response = await handleAuth(request, env, path);
+    } else if (path.startsWith('/api/billing/')) {
+      response = await handleBilling(request, env, path);
     } else if (path.startsWith('/api/watchlist')) {
       response = await handleWatchlist(request, env, path);
     } else if (path.startsWith('/api/search')) {
