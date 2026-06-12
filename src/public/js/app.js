@@ -8,12 +8,22 @@ let currentUser = JSON.parse(localStorage.getItem('bk_user') || 'null');
 let watchlist = [];
 let activeTab = 'All';
 window.addEventListener('DOMContentLoaded', () => {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('token') && window.location.pathname === '/verify') { showVerify(params.get('token'));
-  } else if (params.get('token') && window.location.pathname === '/reset') { showReset(params.get('token'));
+  const route = getAuthRoute();
+  if (route.name === 'verify' && route.token) { showVerify(route.token);
+  } else if (route.name === 'reset' && route.token) { showReset(route.token);
   } else if (token && currentUser) { showApp();
   } else { showAuth(); }
 });
+function getAuthRoute() {
+  const hashMatch = window.location.hash.match(/^#(verify|reset)\?(.*)$/);
+  if (hashMatch) {
+    return { name: hashMatch[1], token: new URLSearchParams(hashMatch[2]).get('token') };
+  }
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('token') && window.location.pathname === '/verify') return { name: 'verify', token: params.get('token') };
+  if (params.get('token') && window.location.pathname === '/reset') return { name: 'reset', token: params.get('token') };
+  return { name: '', token: '' };
+}
 function showAuth() { document.getElementById('authPage').classList.remove('hidden'); document.getElementById('appPage').classList.add('hidden'); showLogin(); }
 function showLogin() { hideAllAuthForms(); document.getElementById('loginForm').classList.remove('hidden'); }
 function showRegister() { hideAllAuthForms(); document.getElementById('registerForm').classList.remove('hidden'); }

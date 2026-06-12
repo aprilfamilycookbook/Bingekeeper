@@ -56,7 +56,7 @@ export async function handleAuth(request, env, path) {
     const hash = await hashPassword(password);
     const token = generateToken();
     await env.DB.prepare('INSERT INTO users (email, password_hash, name, verify_token) VALUES (?, ?, ?, ?)').bind(email.toLowerCase(), hash, name, token).run();
-    const verifyUrl = `https://bingekeeper.tv/verify?token=${token}`;
+    const verifyUrl = `https://bingekeeper.tv/#verify?token=${token}`;
     await sendEmail(env, email, 'Verify your Bingekeeper account', `<h2>Welcome to Bingekeeper, ${name}!</h2><p>Click below to verify your email:</p><a href="${verifyUrl}" style="background:#378ADD;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block">Verify Email</a>`);
     return jsonResponse({ message: 'Account created! Check your email to verify.' });
   }
@@ -88,7 +88,7 @@ export async function handleAuth(request, env, path) {
     const token = generateToken();
     const expires = Math.floor(Date.now() / 1000) + 3600;
     await env.DB.prepare('UPDATE users SET reset_token = ?, reset_expires = ? WHERE id = ?').bind(token, expires, user.id).run();
-    const resetUrl = `https://bingekeeper.tv/reset?token=${token}`;
+    const resetUrl = `https://bingekeeper.tv/#reset?token=${token}`;
     await sendEmail(env, email, 'Reset your Bingekeeper password', `<h2>Password Reset</h2><p>Click below to reset your password. This link expires in 1 hour.</p><a href="${resetUrl}" style="background:#378ADD;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block">Reset Password</a>`);
     return jsonResponse({ message: 'If that email exists, a reset link has been sent.' });
   }
