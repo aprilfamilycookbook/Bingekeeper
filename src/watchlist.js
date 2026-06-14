@@ -31,7 +31,7 @@ export async function handleWatchlist(request, env, path) {
     const account = await env.DB.prepare('SELECT plan FROM users WHERE id = ?').bind(user.userId).first();
     if ((account?.plan || 'free') !== 'plus') {
       const count = await env.DB.prepare('SELECT COUNT(*) as total FROM watchlist WHERE user_id = ?').bind(user.userId).first();
-      if ((count?.total || 0) >= 20) return jsonResponse({ error: 'Free accounts can track up to 20 shows. Upgrade to Plus for unlimited tracking.' }, 402);
+      if ((count?.total || 0) >= 10) return jsonResponse({ error: 'Free accounts can track up to 10 shows. Upgrade to Plus for unlimited tracking.' }, 402);
     }
     await env.DB.prepare(`INSERT INTO shows (id, name, poster_path, overview, first_air_date) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, poster_path=excluded.poster_path`).bind(show_id, name, poster_path || null, overview || null, first_air_date || null).run();
     try {

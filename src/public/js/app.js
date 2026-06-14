@@ -8,7 +8,7 @@ const PUBLIC_PAGES = {
   plus: {
     title: 'Bingekeeper Plus',
     eyebrow: 'Pricing',
-    body: `<p>Track the shows you care about, remember where you watch them, and get a clean view of upcoming episodes.</p><div class="pricing-grid"><div><h3>Free</h3><strong>$0</strong><p>Track up to 20 shows, including status, streaming service, season, episode, and upcoming episode details.</p></div><div class="featured"><h3>Plus</h3><strong>Monthly</strong><p>Unlimited show tracking and self-service billing through Stripe. The final price is shown securely at checkout.</p><button class="btn-primary" onclick="openBillingFromPublic()">Upgrade to Plus</button></div></div>`
+    body: `<p>Track the shows you care about, remember where you watch them, and get a clean view of upcoming episodes.</p><div class="pricing-grid"><div><h3>Free</h3><strong>$0</strong><p>Track up to 10 shows, including status, streaming service, season, episode, and upcoming episode details.</p></div><div class="featured"><h3>Plus</h3><strong>Monthly</strong><p>Unlimited show tracking and self-service billing through Stripe. The final price is shown securely at checkout.</p><button class="btn-primary" onclick="openBillingFromPublic()">Upgrade to Plus</button></div></div>`
   },
   support: {
     title: 'Support',
@@ -23,7 +23,7 @@ const PUBLIC_PAGES = {
   terms: {
     title: 'Terms of Service',
     eyebrow: 'Effective June 12, 2026',
-    body: `<p>Bingekeeper is provided as a show-tracking tool. You are responsible for keeping your login information secure and for using the service lawfully.</p><p>Plus subscriptions are billed through Stripe and can be managed from the app. Free accounts may be limited to 20 tracked shows.</p><p>Bingekeeper depends on third-party services for payments, email, hosting, and show metadata. The service may change as those services or the product evolve.</p>`
+    body: `<p>Bingekeeper is provided as a show-tracking tool. You are responsible for keeping your login information secure and for using the service lawfully.</p><p>Plus subscriptions are billed through Stripe and can be managed from the app. Free accounts may be limited to 10 tracked shows.</p><p>Bingekeeper depends on third-party services for payments, email, hosting, and show metadata. The service may change as those services or the product evolve.</p>`
   }
 };
 
@@ -228,7 +228,7 @@ function renderDashboard() {
   const watching = watchlist.filter(s => s.status === 'Watching').length;
   const upcoming = watchlist.filter(s => s.next_episode_date && s.next_episode_date >= todayString()).sort((a,b) => a.next_episode_date.localeCompare(b.next_episode_date));
   const isPlus = currentUser?.plan === 'plus';
-  document.getElementById('plusBanner').classList.toggle('hidden', isPlus || watchlist.length < 16);
+  document.getElementById('plusBanner').classList.toggle('hidden', isPlus || watchlist.length < 8);
   document.getElementById('dashboardGreeting').textContent = watchlist.length ? `Welcome back, ${currentUser.name}` : 'Start your watchlist';
   document.getElementById('dashboardSubcopy').textContent = watchlist.length ? `${watching} ${plural(watching, 'show')} in progress. ${upcoming.length} upcoming ${plural(upcoming.length, 'episode')} on the radar.` : 'Add a few shows and this page becomes your personal release calendar.';
   document.getElementById('statsGrid').innerHTML = [
