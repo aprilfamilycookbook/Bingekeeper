@@ -38,14 +38,10 @@ export async function handleWatchlist(request, env, path) {
     } catch (e) {
       const message = e?.message || '';
       if (message.includes('UNIQUE')) return jsonResponse({ error: 'Already in watchlist' }, 409);
-      if (message.includes('show_name') || message.includes('poster')) {
-        try {
-          await env.DB.prepare(`INSERT INTO watchlist (user_id, show_id, show_name, poster, status, service, season, episode, current_season, current_episode, notify) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(user.userId, show_id, name, poster_path || null, status || 'Watching', service || 'Other', current_season || 1, current_episode || 1, current_season || 1, current_episode || 1, notify ? 1 : 0).run();
-        } catch (legacyError) {
-          if ((legacyError?.message || '').includes('UNIQUE')) return jsonResponse({ error: 'Already in watchlist' }, 409);
-          return jsonResponse({ error: 'Could not add show. Please try again.' }, 500);
-        }
-      } else {
+      try {
+        await env.DB.prepare(`INSERT INTO watchlist (user_id, show_id, show_name, poster, status, service, season, episode, current_season, current_episode, notify) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(user.userId, show_id, name, poster_path || null, status || 'Watching', service || 'Other', current_season || 1, current_episode || 1, current_season || 1, current_episode || 1, notify ? 1 : 0).run();
+      } catch (legacyError) {
+        if ((legacyError?.message || '').includes('UNIQUE')) return jsonResponse({ error: 'Already in watchlist' }, 409);
         return jsonResponse({ error: 'Could not add show. Please try again.' }, 500);
       }
     }
