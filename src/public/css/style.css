@@ -548,6 +548,26 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.5rem; }
 .result-name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .result-year { font-size: 12px; color: var(--text2); margin-top: 2px; }
 .result-overview { font-size: 12px; color: var(--text3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.provider-row {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.provider-row span {
+  border: 1px solid rgba(51,214,199,0.24);
+  border-radius: 999px;
+  color: var(--cyan);
+  background: rgba(51,214,199,0.08);
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 2px 7px;
+}
+.service-hint {
+  color: var(--text3);
+  font-size: 12px;
+  margin-top: 5px;
+}
 
 .btn-add {
   padding: 5px 12px;
