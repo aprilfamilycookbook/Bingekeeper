@@ -15,12 +15,17 @@ export async function handleWatchlist(request, env, path) {
   if (!user) return jsonResponse({ error: 'Unauthorized' }, 401);
 
   if (path === '/api/watchlist' && request.method === 'GET') {
-    const rows = await env.DB.prepare(`SELECT w.*, s.name, s.poster_path, s.overview, s.next_episode_date, s.next_season_number, s.next_episode_number FROM watchlist w JOIN shows s ON w.show_id = s.id WHERE w.user_id = ? ORDER BY w.added_at DESC`).bind(user.userId).all();
-    return jsonResponse({ watchlist: rows.results });
+    try {
+      const rows = await env.DB.prepare(`SELECT w.*, COALESCE(s.name, w.show_name) AS name, COALESCE(s.poster_path, w.poster) AS poster_path, s.overview, s.next_episode_date, s.next_season_number, s.next_episode_number FROM watchlist w LEFT JOIN shows s ON w.show_id = s.id WHERE w.user_id = ? ORDER BY w.added_at DESC`).bind(user.userId).all();
+      return jsonResponse({ watchlist: rows.results });
+    } catch {
+      const rows = await env.DB.prepare(`SELECT w.*, s.name, s.poster_path, s.overview, s.next_episode_date, s.next_season_number, s.next_episode_number FROM watchlist w JOIN shows s ON w.show_id = s.id WHERE w.user_id = ? ORDER BY w.added_at DESC`).bind(user.userId).all();
+      return jsonResponse({ watchlist: rows.results });
+    }
   }
 
   if (path === '/api/watchlist' && request.method === 'POST') {
-    const { show_id, name, poster_path, overview, first_air_date, status, service, current_season, current_episode } = await request.json();
+    const { show_id, name, poster_path, overview, first_air_date, status, service, current_season, current_episode, notify } = await request.json();
     if (!show_id || !name) return jsonResponse({ error: 'show_id and name required' }, 400);
     const account = await env.DB.prepare('SELECT plan FROM users WHERE id = ?').bind(user.userId).first();
     if ((account?.plan || 'free') !== 'plus') {
@@ -29,8 +34,21 @@ export async function handleWatchlist(request, env, path) {
     }
     await env.DB.prepare(`INSERT INTO shows (id, name, poster_path, overview, first_air_date) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, poster_path=excluded.poster_path`).bind(show_id, name, poster_path || null, overview || null, first_air_date || null).run();
     try {
-      await env.DB.prepare(`INSERT INTO watchlist (user_id, show_id, status, service, current_season, current_episode) VALUES (?, ?, ?, ?, ?, ?)`).bind(user.userId, show_id, status || 'Watching', service || 'Other', current_season || 1, current_episode || 1).run();
-    } catch (e) { return jsonResponse({ error: 'Already in watchlist' }, 409); }
+      await env.DB.prepare(`INSERT INTO watchlist (user_id, show_id, status, service, current_season, current_episode, notify) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(user.userId, show_id, status || 'Watching', service || 'Other', current_season || 1, current_episode || 1, notify ? 1 : 0).run();
+    } catch (e) {
+      const message = e?.message || '';
+      if (message.includes('UNIQUE')) return jsonResponse({ error: 'Already in watchlist' }, 409);
+      if (message.includes('show_name') || message.includes('poster')) {
+        try {
+          await env.DB.prepare(`INSERT INTO watchlist (user_id, show_id, show_name, poster, status, service, season, episode, current_season, current_episode, notify) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(user.userId, show_id, name, poster_path || null, status || 'Watching', service || 'Other', current_season || 1, current_episode || 1, current_season || 1, current_episode || 1, notify ? 1 : 0).run();
+        } catch (legacyError) {
+          if ((legacyError?.message || '').includes('UNIQUE')) return jsonResponse({ error: 'Already in watchlist' }, 409);
+          return jsonResponse({ error: 'Could not add show. Please try again.' }, 500);
+        }
+      } else {
+        return jsonResponse({ error: 'Could not add show. Please try again.' }, 500);
+      }
+    }
     return jsonResponse({ message: 'Added to watchlist' });
   }
 
