@@ -28,6 +28,8 @@ const PUBLIC_PAGES = {
 let token = localStorage.getItem('bk_token');
 let currentUser = JSON.parse(localStorage.getItem('bk_user') || 'null');
 let watchlist = [];
+let searchResults = [];
+let pendingAddShow = null;
 let activeTab = 'All';
 window.addEventListener('DOMContentLoaded', () => {
   const route = getAuthRoute();
@@ -144,20 +146,26 @@ async function doSearch() {
   btn.disabled = false; btn.textContent = 'Search';
   if (res.error) { resultsEl.innerHTML = `<div class="search-msg error">${esc(res.error)}</div>`; return; }
   if (!res.results || res.results.length === 0) { resultsEl.innerHTML = '<div class="search-msg">No results found.</div>'; return; }
-  resultsEl.innerHTML = res.results.slice(0,6).map(s => `<div class="result-item">${s.poster_path?`<img class="result-poster" src="https://image.tmdb.org/t/p/w92${s.poster_path}" alt="${esc(s.name)}" style="object-fit:cover">`:`<div class="result-poster">TV</div>`}<div class="result-info"><div class="result-name">${esc(s.name)}</div><div class="result-year">${s.first_air_date?s.first_air_date.slice(0,4):'Unknown'}</div>${s.overview?`<div class="result-overview">${esc(s.overview)}</div>`:''}</div><button class="btn-add" onclick='openAdd(${JSON.stringify(s)})'>+ Add</button></div>`).join('');
+  searchResults = res.results.slice(0, 6);
+  resultsEl.innerHTML = searchResults.map((s, i) => `<div class="result-item">${s.poster_path?`<img class="result-poster" src="https://image.tmdb.org/t/p/w92${s.poster_path}" alt="${esc(s.name)}" style="object-fit:cover">`:`<div class="result-poster">TV</div>`}<div class="result-info"><div class="result-name">${esc(s.name)}</div><div class="result-year">${s.first_air_date?s.first_air_date.slice(0,4):'Unknown'}</div>${s.overview?`<div class="result-overview">${esc(s.overview)}</div>`:''}</div><button class="btn-add" onclick="openAdd(${i})">+ Add</button></div>`).join('');
 }
-function closeSearch() { document.getElementById('searchResults').classList.add('hidden'); document.getElementById('searchInput').value = ''; }
-function openAdd(show) {
+function closeSearch() { document.getElementById('searchResults').classList.add('hidden'); document.getElementById('searchInput').value = ''; searchResults = []; }
+function openAdd(index) {
+  const show = searchResults[index];
+  if (!show) { toast('Search again and choose a show.'); return; }
+  pendingAddShow = show;
   if (watchlist.find(w => w.show_id === show.id)) { toast('Already in your watchlist!'); return; }
   document.getElementById('modalTitle').textContent = `Add "${show.name}"`;
-  document.getElementById('modalBody').innerHTML = `<div class="form-group"><label>Status</label><select id="f-status">${STATUSES.map(s => `<option>${s}</option>`).join('')}</select></div><div class="form-group"><label>Streaming service</label><select id="f-service">${SERVICES.map(s => `<option>${s}</option>`).join('')}</select></div><div class="form-row"><div class="form-group"><label>Season</label><input type="number" id="f-season" value="1" min="1" max="99"></div><div class="form-group"><label>Episode</label><input type="number" id="f-episode" value="1" min="1" max="999"></div></div><div class="notify-row"><input type="checkbox" id="f-notify" checked><label for="f-notify">Email me when new episodes drop</label></div><div class="modal-actions"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick='confirmAdd(${JSON.stringify(show)})'>Add to watchlist</button></div>`;
+  document.getElementById('modalBody').innerHTML = `<div class="form-group"><label>Status</label><select id="f-status">${STATUSES.map(s => `<option>${s}</option>`).join('')}</select></div><div class="form-group"><label>Streaming service</label><select id="f-service">${SERVICES.map(s => `<option>${s}</option>`).join('')}</select></div><div class="form-row"><div class="form-group"><label>Season</label><input type="number" id="f-season" value="1" min="1" max="99"></div><div class="form-group"><label>Episode</label><input type="number" id="f-episode" value="1" min="1" max="999"></div></div><div class="notify-row"><input type="checkbox" id="f-notify" checked><label for="f-notify">Email me when new episodes drop</label></div><div class="modal-actions"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="confirmAdd()">Add to watchlist</button></div>`;
   openModal();
 }
-async function confirmAdd(show) {
+async function confirmAdd() {
+  const show = pendingAddShow;
+  if (!show) { toast('Search again and choose a show.'); closeModal(); return; }
   const body = { show_id:show.id, name:show.name, poster_path:show.poster_path||null, overview:show.overview||null, first_air_date:show.first_air_date||null, status:document.getElementById('f-status').value, service:document.getElementById('f-service').value, current_season:parseInt(document.getElementById('f-season').value)||1, current_episode:parseInt(document.getElementById('f-episode').value)||1, notify:document.getElementById('f-notify').checked };
   const res = await api('/api/watchlist', 'POST', body);
   if (res.error) { toast(res.error); if (res.error.includes('Upgrade')) document.getElementById('plusBanner').classList.remove('hidden'); return; }
-  closeModal(); closeSearch(); await loadWatchlist(); activeTab = 'All'; render(); toast(`"${show.name}" added!`);
+  pendingAddShow = null; closeModal(); closeSearch(); await loadWatchlist(); activeTab = 'All'; render(); toast(`"${show.name}" added!`);
 }
 function openEdit(idx) {
   const s = watchlist[idx];
@@ -171,10 +179,13 @@ async function confirmEdit(showId) {
   if (res.error) { toast(res.error); return; }
   closeModal(); await loadWatchlist(); toast('Changes saved!');
 }
-async function removeShow(showId, name) {
-  if (!confirm(`Remove "${name}" from your watchlist?`)) return;
+async function removeShow(index) {
+  const show = watchlist[index];
+  if (!show) { toast('Show not found.'); return; }
+  if (!confirm(`Remove "${show.name}" from your watchlist?`)) return;
+  const showId = show.show_id;
   const res = await api(`/api/watchlist/${showId}`, 'DELETE');
-  if (res.error) { toast(res.error); return; } await loadWatchlist(); toast(`"${name}" removed.`);
+  if (res.error) { toast(res.error); return; } await loadWatchlist(); toast(`"${show.name}" removed.`);
 }
 function render() {
   renderDashboard();
@@ -183,7 +194,7 @@ function render() {
   const list = activeTab==='All'?watchlist:watchlist.filter(s => s.status===activeTab);
   const grid = document.getElementById('watchlistGrid');
   if (!list.length) { grid.innerHTML = `<div class="empty-state"><span class="empty-icon">TV</span><h3>${watchlist.length===0?'Build your first watchlist':'Nothing here yet'}</h3><p>${watchlist.length===0?'Search for a show above, add where you watch it, and Bingekeeper will keep an eye on new episodes.':'Try another status tab or add a show to this category.'}</p><button class="btn-primary" onclick="document.getElementById('searchInput').focus()">Start searching</button></div>`; return; }
-  grid.innerHTML = list.map((s,i) => { const idx=watchlist.indexOf(s); const hasUpcoming=s.next_episode_date&&s.next_episode_date>=todayString(); const nextLabel=s.next_episode_date?`S${s.next_season_number}E${s.next_episode_number} - ${formatAirDate(s.next_episode_date)}`:null; return `<div class="show-card">${s.poster_path?`<img class="show-poster" src="https://image.tmdb.org/t/p/w185${s.poster_path}" alt="${esc(s.name)}" loading="lazy">`:`<div class="show-poster-ph">TV</div>`}${hasUpcoming?`<div class="upcoming-badge">${daysUntilLabel(s.next_episode_date)}</div>`:''}<div class="show-body"><div class="show-title" title="${esc(s.name)}">${esc(s.name)}</div><div class="show-badges"><span class="badge ${STATUS_BADGE[s.status]||'b-watching'}">${s.status}</span><span class="badge b-service">${esc(s.service)}</span></div><div class="show-progress">Season ${s.current_season || 1}, episode ${s.current_episode || 1}</div>${nextLabel?`<div class="show-next">${nextLabel}</div>`:''}<div class="show-actions"><button class="btn-sm" onclick="openEdit(${idx})">Edit</button><button class="btn-sm btn-sm-danger" onclick="removeShow(${s.show_id},'${esc(s.name)}')">Remove</button></div></div></div>`; }).join('');
+  grid.innerHTML = list.map((s,i) => { const idx=watchlist.indexOf(s); const hasUpcoming=s.next_episode_date&&s.next_episode_date>=todayString(); const nextLabel=s.next_episode_date?`S${s.next_season_number}E${s.next_episode_number} - ${formatAirDate(s.next_episode_date)}`:null; return `<div class="show-card">${s.poster_path?`<img class="show-poster" src="https://image.tmdb.org/t/p/w185${s.poster_path}" alt="${esc(s.name)}" loading="lazy">`:`<div class="show-poster-ph">TV</div>`}${hasUpcoming?`<div class="upcoming-badge">${daysUntilLabel(s.next_episode_date)}</div>`:''}<div class="show-body"><div class="show-title" title="${esc(s.name)}">${esc(s.name)}</div><div class="show-badges"><span class="badge ${STATUS_BADGE[s.status]||'b-watching'}">${s.status}</span><span class="badge b-service">${esc(s.service)}</span></div><div class="show-progress">Season ${s.current_season || 1}, episode ${s.current_episode || 1}</div>${nextLabel?`<div class="show-next">${nextLabel}</div>`:''}<div class="show-actions"><button class="btn-sm" onclick="openEdit(${idx})">Edit</button><button class="btn-sm btn-sm-danger" onclick="removeShow(${idx})">Remove</button></div></div></div>`; }).join('');
 }
 function renderDashboard() {
   const watching = watchlist.filter(s => s.status === 'Watching').length;
@@ -244,7 +255,7 @@ async function deleteAccount() {
 }
 function setTab(t) { activeTab = t; render(); }
 function openModal() { document.getElementById('modal').classList.remove('hidden'); }
-function closeModal() { document.getElementById('modal').classList.add('hidden'); }
+function closeModal() { document.getElementById('modal').classList.add('hidden'); pendingAddShow = null; }
 document.addEventListener('click', e => { if (e.target===document.getElementById('modal')) closeModal(); });
 function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(window._toastTimer); window._toastTimer = setTimeout(() => t.classList.add('hidden'), 2800); }
