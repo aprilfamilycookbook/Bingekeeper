@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS watchlist (
   current_season INTEGER DEFAULT 1,
   current_episode INTEGER DEFAULT 1,
   notify INTEGER DEFAULT 1,
+  notify_pref TEXT DEFAULT 'two_days',
   added_at INTEGER DEFAULT (unixepoch()),
   FOREIGN KEY (user_id) REFERENCES users(id),
   UNIQUE(user_id, show_id)

@@ -2,6 +2,7 @@
 const SERVICES = ['Netflix','Max','Hulu','Disney+','Apple TV+','Peacock','Paramount+','Amazon Prime','Other'];
 const KNOWN_SERVICES = new Set(SERVICES);
 const STATUSES = ['Watching','Plan to Watch','Completed','On Hold','Dropped'];
+const NOTIFY_OPTIONS = [['two_days','2 days before'],['day_before','1 day before'],['drop','When episode airs'],['none','No episode emails']];
 const STATUS_BADGE = { 'Watching':'b-watching','Plan to Watch':'b-plan','Completed':'b-completed','On Hold':'b-hold','Dropped':'b-dropped' };
 const PUBLIC_PAGES = {
   plus: {
@@ -158,25 +159,28 @@ function openAdd(index) {
   if (watchlist.find(w => w.show_id === show.id)) { toast('Already in your watchlist!'); return; }
   const service = suggestedService(show);
   document.getElementById('modalTitle').textContent = `Add "${show.name}"`;
-  document.getElementById('modalBody').innerHTML = `<div class="form-group"><label>Status</label><select id="f-status">${STATUSES.map(s => `<option>${s}</option>`).join('')}</select></div><div class="form-group"><label>Streaming service</label><select id="f-service">${SERVICES.map(s => `<option${s===service?' selected':''}>${s}</option>`).join('')}</select>${show.providers?.length?`<div class="service-hint">Found on ${show.providers.map(esc).join(', ')}</div>`:''}</div><div class="form-row"><div class="form-group"><label>Season</label><input type="number" id="f-season" value="1" min="1" max="99"></div><div class="form-group"><label>Episode</label><input type="number" id="f-episode" value="1" min="1" max="999"></div></div><div class="notify-row"><input type="checkbox" id="f-notify" checked><label for="f-notify">Email me when new episodes drop</label></div><div class="modal-actions"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="confirmAdd()">Add to watchlist</button></div>`;
+  document.getElementById('modalBody').innerHTML = `<div class="form-group"><label>Status</label><select id="f-status">${STATUSES.map(s => `<option>${s}</option>`).join('')}</select></div><div class="form-group"><label>Streaming service</label><select id="f-service">${SERVICES.map(s => `<option${s===service?' selected':''}>${s}</option>`).join('')}</select>${show.providers?.length?`<div class="service-hint">Found on ${show.providers.map(esc).join(', ')}</div>`:''}</div><div class="form-row"><div class="form-group"><label>Season</label><input type="number" id="f-season" value="1" min="1" max="99"></div><div class="form-group"><label>Episode</label><input type="number" id="f-episode" value="1" min="1" max="999"></div></div><div class="form-group notify-row"><label for="f-notify-pref">Episode emails</label><select id="f-notify-pref">${notifyOptionsHtml('two_days')}</select></div><div class="modal-actions"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="confirmAdd()">Add to watchlist</button></div>`;
   openModal();
 }
 async function confirmAdd() {
   const show = pendingAddShow;
   if (!show) { toast('Search again and choose a show.'); closeModal(); return; }
-  const body = { show_id:show.id, name:show.name, poster_path:show.poster_path||null, overview:show.overview||null, first_air_date:show.first_air_date||null, status:document.getElementById('f-status').value, service:document.getElementById('f-service').value, current_season:parseInt(document.getElementById('f-season').value)||1, current_episode:parseInt(document.getElementById('f-episode').value)||1, notify:document.getElementById('f-notify').checked };
+  const notifyPref = document.getElementById('f-notify-pref').value;
+  const body = { show_id:show.id, name:show.name, poster_path:show.poster_path||null, overview:show.overview||null, first_air_date:show.first_air_date||null, status:document.getElementById('f-status').value, service:document.getElementById('f-service').value, current_season:parseInt(document.getElementById('f-season').value)||1, current_episode:parseInt(document.getElementById('f-episode').value)||1, notify:notifyPref !== 'none', notify_pref:notifyPref };
   const res = await api('/api/watchlist', 'POST', body);
   if (res.error) { toast(res.error); if (res.error.includes('Upgrade')) document.getElementById('plusBanner').classList.remove('hidden'); return; }
   pendingAddShow = null; closeModal(); closeSearch(); await loadWatchlist(); activeTab = 'All'; render(); toast(`"${show.name}" added!`);
 }
 function openEdit(idx) {
   const s = watchlist[idx];
+  const notifyPref = normalizeNotifyPref(s.notify_pref, s.notify);
   document.getElementById('modalTitle').textContent = `Edit "${s.name}"`;
-  document.getElementById('modalBody').innerHTML = `<div class="form-group"><label>Status</label><select id="f-status">${STATUSES.map(st => `<option${st===s.status?' selected':''}>${st}</option>`).join('')}</select></div><div class="form-group"><label>Streaming service</label><select id="f-service">${SERVICES.map(sv => `<option${sv===s.service?' selected':''}>${sv}</option>`).join('')}</select></div><div class="form-row"><div class="form-group"><label>Season</label><input type="number" id="f-season" value="${s.current_season}" min="1" max="99"></div><div class="form-group"><label>Episode</label><input type="number" id="f-episode" value="${s.current_episode}" min="1" max="999"></div></div><div class="notify-row"><input type="checkbox" id="f-notify" ${s.notify?'checked':''}><label for="f-notify">Email me when new episodes drop</label></div><div class="modal-actions"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="confirmEdit(${s.show_id})">Save changes</button></div>`;
+  document.getElementById('modalBody').innerHTML = `<div class="form-group"><label>Status</label><select id="f-status">${STATUSES.map(st => `<option${st===s.status?' selected':''}>${st}</option>`).join('')}</select></div><div class="form-group"><label>Streaming service</label><select id="f-service">${SERVICES.map(sv => `<option${sv===s.service?' selected':''}>${sv}</option>`).join('')}</select></div><div class="form-row"><div class="form-group"><label>Season</label><input type="number" id="f-season" value="${s.current_season || 1}" min="1" max="99"></div><div class="form-group"><label>Episode</label><input type="number" id="f-episode" value="${s.current_episode || 1}" min="1" max="999"></div></div><div class="form-group notify-row"><label for="f-notify-pref">Episode emails</label><select id="f-notify-pref">${notifyOptionsHtml(notifyPref)}</select></div><div class="modal-actions"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="confirmEdit(${s.show_id})">Save changes</button></div>`;
   openModal();
 }
 async function confirmEdit(showId) {
-  const body = { status:document.getElementById('f-status').value, service:document.getElementById('f-service').value, current_season:parseInt(document.getElementById('f-season').value)||1, current_episode:parseInt(document.getElementById('f-episode').value)||1, notify:document.getElementById('f-notify').checked };
+  const notifyPref = document.getElementById('f-notify-pref').value;
+  const body = { status:document.getElementById('f-status').value, service:document.getElementById('f-service').value, current_season:parseInt(document.getElementById('f-season').value)||1, current_episode:parseInt(document.getElementById('f-episode').value)||1, notify:notifyPref !== 'none', notify_pref:notifyPref };
   const res = await api(`/api/watchlist/${showId}`, 'PUT', body);
   if (res.error) { toast(res.error); return; }
   closeModal(); await loadWatchlist(); toast('Changes saved!');
@@ -189,6 +193,28 @@ async function removeShow(index) {
   const res = await api(`/api/watchlist/${showId}`, 'DELETE');
   if (res.error) { toast(res.error); return; } await loadWatchlist(); toast(`"${show.name}" removed.`);
 }
+async function quickProgress(index, season, episode, message) {
+  const show = watchlist[index];
+  if (!show) { toast('Show not found.'); return; }
+  const pref = normalizeNotifyPref(show.notify_pref, show.notify);
+  const body = { status:show.status || 'Watching', service:show.service || 'Other', current_season:season, current_episode:episode, notify:pref !== 'none', notify_pref:pref };
+  const res = await api(`/api/watchlist/${show.show_id}`, 'PUT', body);
+  if (res.error) { toast(res.error); return; }
+  await loadWatchlist();
+  toast(message);
+}
+function incrementEpisode(index) {
+  const show = watchlist[index];
+  if (!show) { toast('Show not found.'); return; }
+  const episode = (parseInt(show.current_episode) || 1) + 1;
+  quickProgress(index, parseInt(show.current_season) || 1, episode, `Moved "${show.name}" to episode ${episode}.`);
+}
+function nextSeason(index) {
+  const show = watchlist[index];
+  if (!show) { toast('Show not found.'); return; }
+  const season = (parseInt(show.current_season) || 1) + 1;
+  quickProgress(index, season, 1, `Moved "${show.name}" to season ${season}.`);
+}
 function render() {
   renderDashboard();
   const allTabs = ['All', ...STATUSES];
@@ -196,7 +222,7 @@ function render() {
   const list = activeTab==='All'?watchlist:watchlist.filter(s => s.status===activeTab);
   const grid = document.getElementById('watchlistGrid');
   if (!list.length) { grid.innerHTML = `<div class="empty-state"><span class="empty-icon">TV</span><h3>${watchlist.length===0?'Build your first watchlist':'Nothing here yet'}</h3><p>${watchlist.length===0?'Search for a show above, add where you watch it, and Bingekeeper will keep an eye on new episodes.':'Try another status tab or add a show to this category.'}</p><button class="btn-primary" onclick="document.getElementById('searchInput').focus()">Start searching</button></div>`; return; }
-  grid.innerHTML = list.map((s,i) => { const idx=watchlist.indexOf(s); const hasUpcoming=s.next_episode_date&&s.next_episode_date>=todayString(); const nextLabel=s.next_episode_date?`S${s.next_season_number}E${s.next_episode_number} - ${formatAirDate(s.next_episode_date)}`:null; return `<div class="show-card">${s.poster_path?`<img class="show-poster" src="https://image.tmdb.org/t/p/w185${s.poster_path}" alt="${esc(s.name)}" loading="lazy">`:`<div class="show-poster-ph">TV</div>`}${hasUpcoming?`<div class="upcoming-badge">${daysUntilLabel(s.next_episode_date)}</div>`:''}<div class="show-body"><div class="show-title" title="${esc(s.name)}">${esc(s.name)}</div><div class="show-badges"><span class="badge ${STATUS_BADGE[s.status]||'b-watching'}">${s.status}</span><span class="badge b-service">${esc(s.service)}</span></div><div class="show-progress">Season ${s.current_season || 1}, episode ${s.current_episode || 1}</div>${nextLabel?`<div class="show-next">${nextLabel}</div>`:''}<div class="show-actions"><button class="btn-sm" onclick="openEdit(${idx})">Edit</button><button class="btn-sm btn-sm-danger" onclick="removeShow(${idx})">Remove</button></div></div></div>`; }).join('');
+  grid.innerHTML = list.map((s,i) => { const idx=watchlist.indexOf(s); const hasUpcoming=s.next_episode_date&&s.next_episode_date>=todayString(); const nextLabel=s.next_episode_date?`S${s.next_season_number}E${s.next_episode_number} - ${formatAirDate(s.next_episode_date)}`:null; return `<div class="show-card">${s.poster_path?`<img class="show-poster" src="https://image.tmdb.org/t/p/w185${s.poster_path}" alt="${esc(s.name)}" loading="lazy">`:`<div class="show-poster-ph">TV</div>`}${hasUpcoming?`<div class="upcoming-badge">${daysUntilLabel(s.next_episode_date)}</div>`:''}<div class="show-body"><div class="show-title" title="${esc(s.name)}">${esc(s.name)}</div><div class="show-badges"><span class="badge ${STATUS_BADGE[s.status]||'b-watching'}">${s.status}</span><span class="badge b-service">${esc(s.service)}</span></div><div class="show-progress">Season ${s.current_season || 1}, episode ${s.current_episode || 1}</div>${nextLabel?`<div class="show-next">${nextLabel}</div>`:''}<div class="show-actions"><button class="btn-sm" onclick="incrementEpisode(${idx})">+ Episode</button><button class="btn-sm" onclick="nextSeason(${idx})">Next season</button><button class="btn-sm" onclick="openEdit(${idx})">Edit</button><button class="btn-sm btn-sm-danger" onclick="removeShow(${idx})">Remove</button></div></div></div>`; }).join('');
 }
 function renderDashboard() {
   const watching = watchlist.filter(s => s.status === 'Watching').length;
@@ -266,6 +292,13 @@ function renderProviders(providers = []) {
 }
 function suggestedService(show) {
   return (show.providers || []).find(provider => KNOWN_SERVICES.has(provider)) || 'Other';
+}
+function notifyOptionsHtml(selected) {
+  return NOTIFY_OPTIONS.map(([value, label]) => `<option value="${value}"${value===selected?' selected':''}>${label}</option>`).join('');
+}
+function normalizeNotifyPref(pref, notify) {
+  if (notify === false || notify === 0) return 'none';
+  return NOTIFY_OPTIONS.some(([value]) => value === pref) ? pref : 'two_days';
 }
 function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(window._toastTimer); window._toastTimer = setTimeout(() => t.classList.add('hidden'), 2800); }
 function showError(el, msg) { el.textContent = msg; el.classList.remove('hidden'); }
