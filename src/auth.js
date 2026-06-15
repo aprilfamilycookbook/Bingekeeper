@@ -161,9 +161,9 @@ async function startOAuth(request, env, providerName) {
   const provider = OAUTH_PROVIDERS[providerName];
   if (!provider) return jsonResponse({ error: 'OAuth provider not supported' }, 404);
   const clientId = env[provider.clientIdEnv];
-  if (!clientId || !env[provider.clientSecretEnv]) return redirectOAuthError('Google login is not configured yet.');
-
   const url = new URL(request.url);
+  if (!clientId || !env[provider.clientSecretEnv]) return redirectOAuthError('Google login is not configured yet.', url.origin);
+
   const returnTo = safeReturnTo(url.searchParams.get('returnTo'));
   const redirectUri = new URL(`/auth/${providerName}/callback`, url.origin).toString();
   const nonce = generateToken();
@@ -187,12 +187,12 @@ async function finishOAuth(request, env, providerName) {
   const code = url.searchParams.get('code');
   const stateParam = url.searchParams.get('state');
   const oauthError = url.searchParams.get('error');
-  if (oauthError) return redirectOAuthError('Google login was cancelled or failed.');
-  if (!code || !stateParam) return redirectOAuthError('Google login response was incomplete.');
+  if (oauthError) return redirectOAuthError('Google login was cancelled or failed.', url.origin);
+  if (!code || !stateParam) return redirectOAuthError('Google login response was incomplete.', url.origin);
 
   const state = await verifyOAuthState(stateParam, env.JWT_SECRET);
   if (!state || state.provider !== providerName || Date.now() - Number(state.ts || 0) > 10 * 60 * 1000) {
-    return redirectOAuthError('Google login expired. Please try again.');
+    return redirectOAuthError('Google login expired. Please try again.', url.origin);
   }
 
   try {
@@ -209,10 +209,10 @@ async function finishOAuth(request, env, providerName) {
       })
     });
     const tokenData = await tokenResponse.json();
-    if (!tokenResponse.ok || !tokenData.id_token) return redirectOAuthError('Google login failed. Please try again.');
+    if (!tokenResponse.ok || !tokenData.id_token) return redirectOAuthError('Google login failed. Please try again.', url.origin);
 
     const profile = await verifyGoogleIdToken(tokenData.id_token, provider, env, state.nonce);
-    if (!profile) return redirectOAuthError('Google identity could not be verified.');
+    if (!profile) return redirectOAuthError('Google identity could not be verified.', url.origin);
 
     const user = await findOrCreateOAuthUser(env, {
       provider: providerName,
@@ -223,7 +223,7 @@ async function finishOAuth(request, env, providerName) {
     const jwt = await createJWT(user.id, user.email, env.JWT_SECRET);
     return oauthSuccessPage(jwt, publicUser(user, env), state.returnTo);
   } catch {
-    return redirectOAuthError('Google login failed. Please try again.');
+    return redirectOAuthError('Google login failed. Please try again.', url.origin);
   }
 }
 
@@ -327,8 +327,8 @@ window.location.replace(${JSON.stringify(target)});
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 }
 
-function redirectOAuthError(message) {
-  return Response.redirect(`/#oauth=error&message=${encodeURIComponent(message)}`, 302);
+function redirectOAuthError(message, origin = 'https://bingekeeper.tv') {
+  return Response.redirect(`${origin}/#oauth=error&message=${encodeURIComponent(message)}`, 302);
 }
 
 function safeReturnTo(value) {
