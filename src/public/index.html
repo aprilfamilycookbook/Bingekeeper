@@ -165,6 +165,7 @@
         </div>
         <div class="header-right">
           <span id="planBadge" class="plan-badge">Free</span>
+          <button class="btn-ghost hidden" id="adminSocialBtn" onclick="openAdminSocial()">Social</button>
           <button class="btn-ghost" id="billingBtn" onclick="openBilling()">Upgrade</button>
           <button class="btn-ghost" onclick="openAccount()">Account</button>
           <span id="headerName" class="header-name"></span>
@@ -221,6 +222,75 @@
         <a href="#privacy" onclick="showPublicPage('privacy')">Privacy</a>
         <a href="#terms" onclick="showPublicPage('terms')">Terms</a>
       </footer>
+    </main>
+  </div>
+
+  <div id="adminSocialPage" class="hidden">
+    <header>
+      <div class="header-inner">
+        <div class="logo">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>
+          <span>BingeKeeper</span>
+        </div>
+        <div class="header-right">
+          <button class="btn-ghost" onclick="showApp()">Dashboard</button>
+          <span id="adminHeaderName" class="header-name"></span>
+          <button class="btn-ghost" onclick="doLogout()">Sign out</button>
+        </div>
+      </div>
+    </header>
+    <main class="admin-social-main">
+      <section class="dashboard-hero admin-social-hero">
+        <div>
+          <p class="eyebrow">Admin tools</p>
+          <h1>Social content dashboard</h1>
+          <p>Generate Facebook posts from release data already tracked by BingeKeeper.</p>
+        </div>
+        <button class="btn-primary" id="weeklyRoundupBtn" onclick="copyWeeklyRoundup()" disabled>Copy Weekly Roundup</button>
+      </section>
+
+      <div id="adminSocialError" class="form-error hidden"></div>
+      <div id="adminSocialStatus" class="search-msg">Loading social content...</div>
+
+      <section class="admin-social-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Today</p>
+            <h2>New seasons released today</h2>
+          </div>
+        </div>
+        <div class="admin-social-grid" id="adminNewSeasons"></div>
+      </section>
+
+      <section class="admin-social-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Today</p>
+            <h2>New episodes released today</h2>
+          </div>
+        </div>
+        <div class="admin-social-grid" id="adminNewEpisodes"></div>
+      </section>
+
+      <section class="admin-social-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Next 7 days</p>
+            <h2>Shows premiering in the next 7 days</h2>
+          </div>
+        </div>
+        <div class="admin-social-grid" id="adminPremiering"></div>
+      </section>
+
+      <section class="admin-social-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Tracked audience</p>
+            <h2>Popular tracked shows</h2>
+          </div>
+        </div>
+        <div class="admin-social-grid" id="adminTrending"></div>
+      </section>
     </main>
   </div>
 

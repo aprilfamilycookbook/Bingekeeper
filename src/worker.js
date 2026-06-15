@@ -3,6 +3,7 @@ import { handleWatchlist } from './watchlist.js';
 import { handleSearch } from './search.js';
 import { handleCron } from './cron.js';
 import { handleBilling, handleStripeWebhook } from './billing.js';
+import { handleAdmin } from './admin.js';
 
 export default {
   async fetch(request, env) {
@@ -27,6 +28,8 @@ export default {
       response = await handleAuth(request, env, path);
     } else if (path.startsWith('/api/billing/')) {
       response = await handleBilling(request, env, path);
+    } else if (path.startsWith('/api/admin/')) {
+      response = await handleAdmin(request, env, path);
     } else if (path.startsWith('/api/watchlist')) {
       response = await handleWatchlist(request, env, path);
     } else if (path.startsWith('/api/search')) {

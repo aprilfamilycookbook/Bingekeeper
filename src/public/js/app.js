@@ -33,6 +33,7 @@ let watchlist = [];
 let searchResults = [];
 let pendingAddShow = null;
 let activeTab = 'All';
+let adminSocialData = null;
 window.addEventListener('DOMContentLoaded', () => {
   const route = getAuthRoute();
   const billingResult = window.location.hash;
@@ -40,6 +41,7 @@ window.addEventListener('DOMContentLoaded', () => {
   if (route.name === 'verify' && route.token) { showVerify(route.token);
   } else if (route.name === 'reset' && route.token) { showReset(route.token);
   } else if (PUBLIC_PAGES[billingResult.slice(1)]) { showPublicPage(billingResult.slice(1));
+  } else if (window.location.pathname === '/admin/social') { showAdminSocial();
   } else if (token && currentUser) { showApp(billingResult === '#billing=success');
   } else { showAuth(); }
 });
@@ -57,6 +59,7 @@ function showAuth() {
   document.getElementById('authPage').classList.remove('hidden');
   document.getElementById('appPage').classList.add('hidden');
   document.getElementById('publicPage').classList.add('hidden');
+  document.getElementById('adminSocialPage').classList.add('hidden');
   showLogin(false);
 }
 function showLogin(shouldScroll = true) { hideAllAuthForms(); document.getElementById('loginForm').classList.remove('hidden'); if (shouldScroll) scrollAuthPanel(); }
@@ -84,6 +87,7 @@ async function doLogin() {
   if (res.error) { showError(errEl, res.error); return; }
   token = res.token; currentUser = res.user;
   localStorage.setItem('bk_token', token); localStorage.setItem('bk_user', JSON.stringify(currentUser));
+  if (window.location.pathname === '/admin/social') { showAdminSocial(); return; }
   showApp();
 }
 async function doRegister() {
@@ -127,14 +131,15 @@ async function verifyEmail(t) {
   if (res.error) { msg.style.color = '#ef4444'; msg.textContent = res.error;
   } else { msg.style.color = '#22c55e'; msg.textContent = res.message + ' Redirecting to login...'; setTimeout(() => { window.location.href = '/'; }, 2500); }
 }
-function doLogout() { token = null; currentUser = null; localStorage.removeItem('bk_token'); localStorage.removeItem('bk_user'); watchlist = []; showAuth(); }
+function doLogout() { token = null; currentUser = null; localStorage.removeItem('bk_token'); localStorage.removeItem('bk_user'); watchlist = []; adminSocialData = null; showAuth(); }
 async function showApp(fromBilling = false) {
-  document.getElementById('authPage').classList.add('hidden'); document.getElementById('publicPage').classList.add('hidden'); document.getElementById('appPage').classList.remove('hidden');
+  document.getElementById('authPage').classList.add('hidden'); document.getElementById('publicPage').classList.add('hidden'); document.getElementById('adminSocialPage').classList.add('hidden'); document.getElementById('appPage').classList.remove('hidden');
   await refreshCurrentUser();
   if (fromBilling) toast(currentUser?.plan === 'plus' ? 'Welcome to Plus!' : 'Plus is processing. Your account will update shortly.');
   if (fromBilling) window.history.replaceState(null, '', '/');
   document.getElementById('headerName').textContent = currentUser.name;
   syncBillingUi();
+  syncAdminUi();
   document.getElementById('searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); if (e.key === 'Escape') closeSearch(); });
   document.addEventListener('click', e => { const sr = document.getElementById('searchResults'); if (!sr.contains(e.target) && e.target !== document.getElementById('searchInput') && e.target !== document.getElementById('searchBtn')) { sr.classList.add('hidden'); } });
   await loadWatchlist();
@@ -256,6 +261,9 @@ function syncBillingUi() {
   document.getElementById('planBadge').classList.toggle('is-plus', isPlus);
   document.getElementById('billingBtn').textContent = isPlus ? 'Manage Plus' : 'Upgrade';
 }
+function syncAdminUi() {
+  document.getElementById('adminSocialBtn').classList.toggle('hidden', !currentUser?.is_admin);
+}
 async function openBilling() {
   const path = currentUser?.plan === 'plus' ? '/api/billing/portal' : '/api/billing/checkout';
   const res = await api(path, 'POST');
@@ -270,9 +278,131 @@ function showPublicPage(page) {
   const content = PUBLIC_PAGES[page] || PUBLIC_PAGES.plus;
   document.getElementById('authPage').classList.add('hidden');
   document.getElementById('appPage').classList.add('hidden');
+  document.getElementById('adminSocialPage').classList.add('hidden');
   document.getElementById('publicPage').classList.remove('hidden');
   document.getElementById('publicContent').innerHTML = `<p class="eyebrow">${content.eyebrow}</p><h1>${content.title}</h1>${content.body}`;
   window.history.replaceState(null, '', `#${page}`);
+}
+async function openAdminSocial() {
+  window.history.pushState(null, '', '/admin/social');
+  await showAdminSocial();
+}
+async function showAdminSocial() {
+  if (!token || !currentUser) {
+    showAuth();
+    toast('Sign in with an admin account.');
+    return;
+  }
+
+  document.getElementById('authPage').classList.add('hidden');
+  document.getElementById('publicPage').classList.add('hidden');
+  document.getElementById('appPage').classList.add('hidden');
+  document.getElementById('adminSocialPage').classList.remove('hidden');
+  document.getElementById('adminSocialError').classList.add('hidden');
+  document.getElementById('adminSocialStatus').classList.remove('hidden');
+  document.getElementById('adminSocialStatus').textContent = 'Loading social content...';
+  document.getElementById('weeklyRoundupBtn').disabled = true;
+
+  await refreshCurrentUser();
+  if (!currentUser?.is_admin) {
+    document.getElementById('adminSocialPage').classList.add('hidden');
+    showApp();
+    toast('Admin access required.');
+    return;
+  }
+
+  document.getElementById('adminHeaderName').textContent = currentUser.name;
+  const res = await api('/api/admin/social', 'GET');
+  if (res.error) {
+    document.getElementById('adminSocialStatus').classList.add('hidden');
+    showError(document.getElementById('adminSocialError'), res.error);
+    if (res.error.includes('Admin')) setTimeout(() => showApp(), 1200);
+    return;
+  }
+
+  adminSocialData = res.sections || {};
+  renderAdminSocial();
+  document.getElementById('adminSocialStatus').classList.add('hidden');
+  document.getElementById('weeklyRoundupBtn').disabled = weeklyRoundupItems().length === 0;
+}
+function renderAdminSocial() {
+  renderAdminSocialSection('adminNewSeasons', adminSocialData.new_seasons_today || [], 'season');
+  renderAdminSocialSection('adminNewEpisodes', adminSocialData.new_episodes_today || [], 'episode');
+  renderAdminSocialSection('adminPremiering', adminSocialData.premiering_this_week || [], 'upcoming');
+  renderAdminSocialSection('adminTrending', adminSocialData.trending_tracked || [], 'trending');
+}
+function renderAdminSocialSection(id, items, type) {
+  const el = document.getElementById(id);
+  if (!items.length) {
+    el.innerHTML = '<div class="empty-state compact"><span class="empty-icon">TV</span><h3>No items found</h3><p>Nothing in this category from current tracked release data.</p></div>';
+    return;
+  }
+  el.innerHTML = items.map((item, index) => adminSocialCard(item, type, index)).join('');
+}
+function adminSocialCard(item, type, index) {
+  const poster = item.poster_url ? `<img src="${esc(item.poster_url)}" alt="${esc(item.name)} poster" loading="lazy">` : '<div class="admin-social-poster">TV</div>';
+  const meta = [
+    item.season_number ? `Season ${item.season_number}` : '',
+    item.episode_number ? `Episode ${item.episode_number}` : '',
+    item.release_date ? formatAirDate(item.release_date) : '',
+    item.services?.length ? item.services.join(', ') : '',
+    item.tracked_count ? `${item.tracked_count} tracked` : ''
+  ].filter(Boolean);
+  return `<article class="admin-social-card">
+    ${poster}
+    <div class="admin-social-card-body">
+      <h3>${esc(item.name)}</h3>
+      <div class="admin-social-meta">${meta.map(value => `<span>${esc(value)}</span>`).join('')}</div>
+      <button class="btn-primary btn-full" onclick="copyFacebookPost('${type}', ${index})">Copy Facebook Post</button>
+    </div>
+  </article>`;
+}
+async function copyFacebookPost(type, index) {
+  const collections = {
+    season: adminSocialData.new_seasons_today || [],
+    episode: adminSocialData.new_episodes_today || [],
+    upcoming: adminSocialData.premiering_this_week || [],
+    trending: adminSocialData.trending_tracked || []
+  };
+  const item = collections[type]?.[index];
+  if (!item) { toast('Post item not found.'); return; }
+  await copyText(facebookPostText(item, type));
+}
+function facebookPostText(item, type) {
+  if (type === 'episode') {
+    return `📺 New Episode Alert\n\n${item.name}${item.season_number ? ` Season ${item.season_number}` : ''}${item.episode_number ? ` Episode ${item.episode_number}` : ''} is now available.\n\nAre you watching?\n\nTrack your favorite shows and never miss a new episode:\nhttps://bingekeeper.tv`;
+  }
+  if (type === 'upcoming') {
+    return `📺 Coming Soon\n\n${item.name}${item.season_number ? ` Season ${item.season_number}` : ''} arrives ${item.release_date ? formatAirDate(item.release_date) : 'soon'}.\n\nAre you watching?\n\nTrack your favorite shows and never miss a new episode:\nhttps://bingekeeper.tv`;
+  }
+  return `📺 New Season Alert\n\n${item.name}${item.season_number ? ` Season ${item.season_number}` : ''} is now available.\n\nAre you watching?\n\nTrack your favorite shows and never miss a new episode:\nhttps://bingekeeper.tv`;
+}
+async function copyWeeklyRoundup() {
+  const items = weeklyRoundupItems();
+  if (!items.length) { toast('No weekly roundup items found.'); return; }
+  const lines = items.slice(0, 6).map(item => `📺 ${item.name}${item.season_number ? ` Season ${item.season_number}` : ''}`);
+  await copyText(`🍿 Coming This Week\n\nHere are some shows returning or premiering this week:\n\n${lines.join('\n')}\n\nWhich one are you watching?\n\nTrack your shows free:\nhttps://bingekeeper.tv`);
+}
+function weeklyRoundupItems() {
+  return [...(adminSocialData?.premiering_this_week || []), ...(adminSocialData?.new_seasons_today || []), ...(adminSocialData?.new_episodes_today || [])]
+    .filter((item, index, items) => items.findIndex(other => other.show_id === item.show_id) === index);
+}
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Copied Facebook post.');
+  } catch {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    textarea.remove();
+    toast('Copied Facebook post.');
+  }
 }
 function openAccount() {
   const isPlus = currentUser?.plan === 'plus';

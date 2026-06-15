@@ -52,9 +52,9 @@ export async function handleAuth(request, env, path) {
     if (!auth || !auth.startsWith('Bearer ')) return jsonResponse({ error: 'Unauthorized' }, 401);
     const tokenUser = await verifyJWT(auth.slice(7), env.JWT_SECRET);
     if (!tokenUser) return jsonResponse({ error: 'Unauthorized' }, 401);
-    const user = await env.DB.prepare('SELECT id, email, name, plan, subscription_status FROM users WHERE id = ?').bind(tokenUser.userId).first();
+    const user = await getUserById(env, tokenUser.userId);
     if (!user) return jsonResponse({ error: 'User not found' }, 404);
-    return jsonResponse({ user: { id: user.id, email: user.email, name: user.name, plan: user.plan || 'free', subscription_status: user.subscription_status || null } });
+    return jsonResponse({ user: publicUser(user, env) });
   }
 
   if (path === '/api/auth/account' && request.method === 'DELETE') {
@@ -91,7 +91,7 @@ export async function handleAuth(request, env, path) {
     if (hash !== user.password_hash) return jsonResponse({ error: 'Invalid email or password' }, 401);
     if (!user.verified) return jsonResponse({ error: 'Please verify your email first. Check your inbox.' }, 403);
     const jwt = await createJWT(user.id, user.email, env.JWT_SECRET);
-    return jsonResponse({ token: jwt, user: { id: user.id, email: user.email, name: user.name, plan: user.plan || 'free', subscription_status: user.subscription_status || null } });
+    return jsonResponse({ token: jwt, user: publicUser(user, env) });
   }
 
   if (path === '/api/auth/verify' && request.method === 'POST') {
@@ -134,4 +134,28 @@ async function sendEmail(env, to, subject, html) {
     headers: { 'Authorization': `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ from: 'Bingekeeper <hello@bingekeeper.tv>', to, subject, html })
   });
+}
+
+async function getUserById(env, userId) {
+  try {
+    return await env.DB.prepare('SELECT id, email, name, plan, subscription_status, is_admin FROM users WHERE id = ?').bind(userId).first();
+  } catch {
+    return await env.DB.prepare('SELECT id, email, name, plan, subscription_status FROM users WHERE id = ?').bind(userId).first();
+  }
+}
+
+function publicUser(user, env) {
+  const adminEmails = String(env.ADMIN_EMAILS || '')
+    .split(',')
+    .map(email => email.trim().toLowerCase())
+    .filter(Boolean);
+
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    plan: user.plan || 'free',
+    subscription_status: user.subscription_status || null,
+    is_admin: Boolean(user.is_admin) || adminEmails.includes(String(user.email).toLowerCase())
+  };
 }

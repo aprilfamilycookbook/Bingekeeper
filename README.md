@@ -26,6 +26,7 @@ Then fill in:
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
 - `STRIPE_PLUS_PRICE_ID`
+- `ADMIN_EMAILS`
 
 Run locally:
 
@@ -71,3 +72,5 @@ The current Cloudflare Worker has a TMDB secret named `TMDB_API_KEY ` with a tra
 The live D1 database originally had an older schema. It was updated on 2026-06-12 to add the `users.name`, `users.verified`, `users.verify_token`, `users.reset_token`, `users.reset_expires`, `watchlist.current_season`, `watchlist.current_episode`, and `watchlist.notify` columns required by the current Worker. It was also updated with `users.plan`, `users.stripe_customer_id`, `users.stripe_subscription_id`, and `users.subscription_status` for Plus billing.
 
 Plus billing uses Stripe Checkout. Add these Cloudflare Worker values before enabling paid upgrades: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PLUS_PRICE_ID`. Configure the Stripe webhook endpoint as `https://bingekeeper.tv/api/stripe/webhook`.
+
+The admin social content dashboard is available at `/admin/social`. Grant access by setting `ADMIN_EMAILS` to a comma-separated list of admin account emails, or by applying `migrations/0001_admin_users.sql` and setting `users.is_admin = 1` in D1.
