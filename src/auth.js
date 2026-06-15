@@ -5,11 +5,33 @@ async function hashPassword(password) {
   return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+function base64UrlEncode(value) {
+  const raw = typeof value === 'string' ? value : String.fromCharCode(...new Uint8Array(value));
+  return btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function base64UrlDecode(value) {
+  const padded = value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - value.length % 4) % 4);
+  return atob(padded);
+}
+
 function generateToken() {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
   return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
 }
+
+const OAUTH_PROVIDERS = {
+  google: {
+    authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
+    userInfoUrl: 'https://openidconnect.googleapis.com/v1/userinfo',
+    scope: 'openid email profile',
+    clientIdEnv: 'GOOGLE_CLIENT_ID',
+    clientSecretEnv: 'GOOGLE_CLIENT_SECRET'
+  }
+  // Facebook can be added later with the same start/callback shape.
+};
 
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -46,6 +68,14 @@ export async function verifyJWT(token, secret) {
 
 export async function handleAuth(request, env, path) {
   const body = request.method === 'POST' ? await request.json().catch(() => ({})) : {};
+
+  if (path === '/api/auth/google/start' && request.method === 'GET') {
+    return startOAuth(request, env, 'google');
+  }
+
+  if (path === '/api/auth/google/callback' && request.method === 'GET') {
+    return finishOAuth(request, env, 'google');
+  }
 
   if (path === '/api/auth/me' && request.method === 'GET') {
     const auth = request.headers.get('Authorization');
@@ -125,6 +155,149 @@ export async function handleAuth(request, env, path) {
   }
 
   return jsonResponse({ error: 'Not found' }, 404);
+}
+
+async function startOAuth(request, env, providerName) {
+  const provider = OAUTH_PROVIDERS[providerName];
+  if (!provider) return jsonResponse({ error: 'OAuth provider not supported' }, 404);
+  const clientId = env[provider.clientIdEnv];
+  if (!clientId || !env[provider.clientSecretEnv]) return redirectOAuthError('Google login is not configured yet.');
+
+  const url = new URL(request.url);
+  const returnTo = safeReturnTo(url.searchParams.get('returnTo'));
+  const redirectUri = new URL(`/api/auth/${providerName}/callback`, url.origin).toString();
+  const state = await createOAuthState({ provider: providerName, returnTo, ts: Date.now() }, env.JWT_SECRET);
+  const authUrl = new URL(provider.authUrl);
+  authUrl.searchParams.set('client_id', clientId);
+  authUrl.searchParams.set('redirect_uri', redirectUri);
+  authUrl.searchParams.set('response_type', 'code');
+  authUrl.searchParams.set('scope', provider.scope);
+  authUrl.searchParams.set('state', state);
+  authUrl.searchParams.set('prompt', 'select_account');
+
+  return Response.redirect(authUrl.toString(), 302);
+}
+
+async function finishOAuth(request, env, providerName) {
+  const provider = OAUTH_PROVIDERS[providerName];
+  if (!provider) return redirectOAuthError('OAuth provider not supported.');
+  const url = new URL(request.url);
+  const code = url.searchParams.get('code');
+  const stateParam = url.searchParams.get('state');
+  const oauthError = url.searchParams.get('error');
+  if (oauthError) return redirectOAuthError('Google login was cancelled or failed.');
+  if (!code || !stateParam) return redirectOAuthError('Google login response was incomplete.');
+
+  const state = await verifyOAuthState(stateParam, env.JWT_SECRET);
+  if (!state || state.provider !== providerName || Date.now() - Number(state.ts || 0) > 10 * 60 * 1000) {
+    return redirectOAuthError('Google login expired. Please try again.');
+  }
+
+  try {
+    const redirectUri = new URL(`/api/auth/${providerName}/callback`, url.origin).toString();
+    const tokenResponse = await fetch(provider.tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: env[provider.clientIdEnv],
+        client_secret: env[provider.clientSecretEnv],
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code'
+      })
+    });
+    const tokenData = await tokenResponse.json();
+    if (!tokenResponse.ok || !tokenData.access_token) return redirectOAuthError('Google login failed. Please try again.');
+
+    const profileResponse = await fetch(provider.userInfoUrl, {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` }
+    });
+    const profile = await profileResponse.json();
+    if (!profileResponse.ok || !profile.sub || !profile.email) return redirectOAuthError('Google profile could not be loaded.');
+    if (profile.email_verified === false) return redirectOAuthError('Google email must be verified before signing in.');
+
+    const user = await findOrCreateOAuthUser(env, {
+      provider: providerName,
+      providerUserId: profile.sub,
+      email: String(profile.email).toLowerCase(),
+      name: profile.name || profile.given_name || String(profile.email).split('@')[0]
+    });
+    const jwt = await createJWT(user.id, user.email, env.JWT_SECRET);
+    return oauthSuccessPage(jwt, publicUser(user, env), state.returnTo);
+  } catch {
+    return redirectOAuthError('Google login failed. Please try again.');
+  }
+}
+
+async function createOAuthState(payload, secret) {
+  const body = base64UrlEncode(JSON.stringify(payload));
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(body));
+  return `${body}.${base64UrlEncode(sig)}`;
+}
+
+async function verifyOAuthState(state, secret) {
+  try {
+    const [body, sig] = state.split('.');
+    if (!body || !sig) return null;
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+    const valid = await crypto.subtle.verify('HMAC', key, Uint8Array.from(base64UrlDecode(sig), c => c.charCodeAt(0)), encoder.encode(body));
+    if (!valid) return null;
+    return JSON.parse(base64UrlDecode(body));
+  } catch {
+    return null;
+  }
+}
+
+async function findOrCreateOAuthUser(env, profile) {
+  const linked = await env.DB.prepare(`
+    SELECT u.* FROM oauth_accounts oa
+    JOIN users u ON u.id = oa.user_id
+    WHERE oa.provider = ? AND oa.provider_user_id = ?
+  `).bind(profile.provider, profile.providerUserId).first();
+  if (linked) {
+    await env.DB.prepare('UPDATE oauth_accounts SET email = ?, updated_at = unixepoch() WHERE provider = ? AND provider_user_id = ?').bind(profile.email, profile.provider, profile.providerUserId).run();
+    return linked;
+  }
+
+  let user = await env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(profile.email).first();
+  if (!user) {
+    const passwordHash = await hashPassword(`oauth:${profile.provider}:${profile.providerUserId}:${generateToken()}`);
+    await env.DB.prepare('INSERT INTO users (email, password_hash, name, verified) VALUES (?, ?, ?, 1)').bind(profile.email, passwordHash, profile.name).run();
+    user = await env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(profile.email).first();
+  } else if (!user.verified) {
+    await env.DB.prepare('UPDATE users SET verified = 1, verify_token = NULL WHERE id = ?').bind(user.id).run();
+    user = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(user.id).first();
+  }
+
+  await env.DB.prepare(`
+    INSERT INTO oauth_accounts (user_id, provider, provider_user_id, email)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(provider, provider_user_id) DO UPDATE SET user_id = excluded.user_id, email = excluded.email, updated_at = unixepoch()
+  `).bind(user.id, profile.provider, profile.providerUserId, profile.email).run();
+  return user;
+}
+
+function oauthSuccessPage(token, user, returnTo) {
+  const target = safeReturnTo(returnTo);
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Signing in...</title></head><body><script>
+localStorage.setItem('bk_token', ${JSON.stringify(token)});
+localStorage.setItem('bk_user', ${JSON.stringify(JSON.stringify(user))});
+window.location.replace(${JSON.stringify(target)});
+</script></body></html>`;
+  return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+}
+
+function redirectOAuthError(message) {
+  return Response.redirect(`/#oauth=error&message=${encodeURIComponent(message)}`, 302);
+}
+
+function safeReturnTo(value) {
+  if (!value || typeof value !== 'string') return '/';
+  if (!value.startsWith('/') || value.startsWith('//')) return '/';
+  return value;
 }
 
 async function sendEmail(env, to, subject, html) {

@@ -27,6 +27,8 @@ Then fill in:
 - `STRIPE_WEBHOOK_SECRET`
 - `STRIPE_PLUS_PRICE_ID`
 - `ADMIN_EMAILS`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
 
 Run locally:
 
@@ -74,3 +76,5 @@ The live D1 database originally had an older schema. It was updated on 2026-06-1
 Plus billing uses Stripe Checkout. Add these Cloudflare Worker values before enabling paid upgrades: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PLUS_PRICE_ID`. Configure the Stripe webhook endpoint as `https://bingekeeper.tv/api/stripe/webhook`.
 
 The admin social content dashboard is available at `/admin/social`. Grant access by setting `ADMIN_EMAILS` to a comma-separated list of admin account emails, or by applying `migrations/0001_admin_users.sql` and setting `users.is_admin = 1` in D1.
+
+Google Sign-In uses OAuth. Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` as Worker secrets/vars, and configure this authorized redirect URI in Google Cloud: `https://bingekeeper.tv/api/auth/google/callback`. OAuth account links are stored in `oauth_accounts`; this keeps existing email/password accounts, watchlists, subscriptions, admin status, and settings attached to the same user record when the Google email matches.

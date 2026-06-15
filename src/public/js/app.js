@@ -37,9 +37,11 @@ let adminSocialData = null;
 window.addEventListener('DOMContentLoaded', () => {
   const route = getAuthRoute();
   const billingResult = window.location.hash;
+  const oauthResult = getOAuthResult();
   if (billingResult === '#billing=cancelled') toast('Upgrade cancelled.');
   if (route.name === 'verify' && route.token) { showVerify(route.token);
   } else if (route.name === 'reset' && route.token) { showReset(route.token);
+  } else if (oauthResult.error) { showAuth(); showOAuthError(oauthResult.message);
   } else if (PUBLIC_PAGES[billingResult.slice(1)]) { showPublicPage(billingResult.slice(1));
   } else if (window.location.pathname === '/admin/social') { showAdminSocial();
   } else if (token && currentUser) { showApp(billingResult === '#billing=success');
@@ -54,6 +56,11 @@ function getAuthRoute() {
   if (params.get('token') && window.location.pathname === '/verify') return { name: 'verify', token: params.get('token') };
   if (params.get('token') && window.location.pathname === '/reset') return { name: 'reset', token: params.get('token') };
   return { name: '', token: '' };
+}
+function getOAuthResult() {
+  if (!window.location.hash.startsWith('#oauth=')) return { error: false, message: '' };
+  const params = new URLSearchParams(window.location.hash.slice(1));
+  return { error: params.get('oauth') === 'error', message: params.get('message') || 'Google login failed. Please try again.' };
 }
 function showAuth() {
   document.getElementById('authPage').classList.remove('hidden');
@@ -74,6 +81,18 @@ function scrollAuthPanel() {
 }
 function scrollToHowItWorks() {
   document.getElementById('howItWorks')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function startGoogleLogin() {
+  const returnTo = window.location.pathname === '/admin/social' ? '/admin/social' : '/';
+  window.location.href = `/api/auth/google/start?returnTo=${encodeURIComponent(returnTo)}`;
+}
+function showOAuthError(message) {
+  hideAllAuthForms();
+  const loginForm = document.getElementById('loginForm');
+  const errEl = document.getElementById('loginError');
+  loginForm.classList.remove('hidden');
+  showError(errEl, message);
+  window.history.replaceState(null, '', '/');
 }
 async function doLogin() {
   const email = document.getElementById('loginEmail').value.trim();
