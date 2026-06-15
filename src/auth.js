@@ -25,7 +25,7 @@ const OAUTH_PROVIDERS = {
   google: {
     authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
     tokenUrl: 'https://oauth2.googleapis.com/token',
-    userInfoUrl: 'https://openidconnect.googleapis.com/v1/userinfo',
+    jwksUrl: 'https://www.googleapis.com/oauth2/v3/certs',
     scope: 'openid email profile',
     clientIdEnv: 'GOOGLE_CLIENT_ID',
     clientSecretEnv: 'GOOGLE_CLIENT_SECRET'
@@ -69,11 +69,11 @@ export async function verifyJWT(token, secret) {
 export async function handleAuth(request, env, path) {
   const body = request.method === 'POST' ? await request.json().catch(() => ({})) : {};
 
-  if (path === '/api/auth/google/start' && request.method === 'GET') {
+  if ((path === '/auth/google/start' || path === '/api/auth/google/start') && request.method === 'GET') {
     return startOAuth(request, env, 'google');
   }
 
-  if (path === '/api/auth/google/callback' && request.method === 'GET') {
+  if ((path === '/auth/google/callback' || path === '/api/auth/google/callback') && request.method === 'GET') {
     return finishOAuth(request, env, 'google');
   }
 
@@ -165,14 +165,16 @@ async function startOAuth(request, env, providerName) {
 
   const url = new URL(request.url);
   const returnTo = safeReturnTo(url.searchParams.get('returnTo'));
-  const redirectUri = new URL(`/api/auth/${providerName}/callback`, url.origin).toString();
-  const state = await createOAuthState({ provider: providerName, returnTo, ts: Date.now() }, env.JWT_SECRET);
+  const redirectUri = new URL(`/auth/${providerName}/callback`, url.origin).toString();
+  const nonce = generateToken();
+  const state = await createOAuthState({ provider: providerName, returnTo, nonce, ts: Date.now() }, env.JWT_SECRET);
   const authUrl = new URL(provider.authUrl);
   authUrl.searchParams.set('client_id', clientId);
   authUrl.searchParams.set('redirect_uri', redirectUri);
   authUrl.searchParams.set('response_type', 'code');
   authUrl.searchParams.set('scope', provider.scope);
   authUrl.searchParams.set('state', state);
+  authUrl.searchParams.set('nonce', nonce);
   authUrl.searchParams.set('prompt', 'select_account');
 
   return Response.redirect(authUrl.toString(), 302);
@@ -194,7 +196,7 @@ async function finishOAuth(request, env, providerName) {
   }
 
   try {
-    const redirectUri = new URL(`/api/auth/${providerName}/callback`, url.origin).toString();
+    const redirectUri = new URL(`/auth/${providerName}/callback`, url.origin).toString();
     const tokenResponse = await fetch(provider.tokenUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -207,14 +209,10 @@ async function finishOAuth(request, env, providerName) {
       })
     });
     const tokenData = await tokenResponse.json();
-    if (!tokenResponse.ok || !tokenData.access_token) return redirectOAuthError('Google login failed. Please try again.');
+    if (!tokenResponse.ok || !tokenData.id_token) return redirectOAuthError('Google login failed. Please try again.');
 
-    const profileResponse = await fetch(provider.userInfoUrl, {
-      headers: { Authorization: `Bearer ${tokenData.access_token}` }
-    });
-    const profile = await profileResponse.json();
-    if (!profileResponse.ok || !profile.sub || !profile.email) return redirectOAuthError('Google profile could not be loaded.');
-    if (profile.email_verified === false) return redirectOAuthError('Google email must be verified before signing in.');
+    const profile = await verifyGoogleIdToken(tokenData.id_token, provider, env, state.nonce);
+    if (!profile) return redirectOAuthError('Google identity could not be verified.');
 
     const user = await findOrCreateOAuthUser(env, {
       provider: providerName,
@@ -249,6 +247,45 @@ async function verifyOAuthState(state, secret) {
   } catch {
     return null;
   }
+}
+
+async function verifyGoogleIdToken(idToken, provider, env, expectedNonce) {
+  const parts = idToken.split('.');
+  if (parts.length !== 3) return null;
+
+  let header;
+  let payload;
+  try {
+    header = JSON.parse(base64UrlDecode(parts[0]));
+    payload = JSON.parse(base64UrlDecode(parts[1]));
+  } catch {
+    return null;
+  }
+
+  if (header.alg !== 'RS256' || !header.kid) return null;
+  const certsResponse = await fetch(provider.jwksUrl);
+  if (!certsResponse.ok) return null;
+  const certs = await certsResponse.json();
+  const jwk = (certs.keys || []).find(key => key.kid === header.kid);
+  if (!jwk) return null;
+
+  const key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
+  const valid = await crypto.subtle.verify(
+    'RSASSA-PKCS1-v1_5',
+    key,
+    Uint8Array.from(base64UrlDecode(parts[2]), c => c.charCodeAt(0)),
+    new TextEncoder().encode(`${parts[0]}.${parts[1]}`)
+  );
+  if (!valid) return null;
+
+  const now = Math.floor(Date.now() / 1000);
+  if (!['https://accounts.google.com', 'accounts.google.com'].includes(payload.iss)) return null;
+  if (payload.aud !== env[provider.clientIdEnv]) return null;
+  if (Number(payload.exp || 0) < now) return null;
+  if (payload.nonce !== expectedNonce) return null;
+  if (!payload.sub || !payload.email || !(payload.email_verified === true || payload.email_verified === 'true')) return null;
+
+  return payload;
 }
 
 async function findOrCreateOAuthUser(env, profile) {

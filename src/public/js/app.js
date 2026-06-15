@@ -84,7 +84,7 @@ function scrollToHowItWorks() {
 }
 function startGoogleLogin() {
   const returnTo = window.location.pathname === '/admin/social' ? '/admin/social' : '/';
-  window.location.href = `/api/auth/google/start?returnTo=${encodeURIComponent(returnTo)}`;
+  window.location.href = `/auth/google/start?returnTo=${encodeURIComponent(returnTo)}`;
 }
 function showOAuthError(message) {
   hideAllAuthForms();

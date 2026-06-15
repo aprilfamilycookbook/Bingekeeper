@@ -24,6 +24,8 @@ export default {
 
     if (path === '/api/stripe/webhook') {
       response = await handleStripeWebhook(request, env);
+    } else if (path.startsWith('/auth/google/')) {
+      response = await handleAuth(request, env, path);
     } else if (path.startsWith('/api/auth/')) {
       response = await handleAuth(request, env, path);
     } else if (path.startsWith('/api/billing/')) {
