@@ -9,9 +9,11 @@
   <meta property="og:description" content="Track your favorite shows across streaming services and get reminded when new episodes or seasons are released.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://bingekeeper.tv/">
+  <meta property="og:image" content="https://bingekeeper.tv/images/logo.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="BingeKeeper &mdash; Never miss a new episode or season again.">
   <meta name="twitter:description" content="Track your favorite shows across streaming services and get reminded when new episodes or seasons are released.">
+  <meta name="twitter:image" content="https://bingekeeper.tv/images/logo.png">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -19,7 +21,7 @@
     <div class="landing-shell">
       <nav class="landing-nav">
         <div class="brand-logo">
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>
+          <img src="/images/logo.png" alt="" aria-hidden="true">
           <span>BingeKeeper</span>
         </div>
         <div class="landing-nav-links">
@@ -30,12 +32,16 @@
 
       <section class="landing-hero">
         <div class="hero-copy">
+          <div class="hero-logo-lockup">
+            <img src="/images/logo.png" alt="BingeKeeper logo">
+            <span>BingeKeeper</span>
+          </div>
           <p class="eyebrow">Show tracking for busy streamers</p>
           <h1>Never miss a new episode or season again.</h1>
-          <p class="hero-subheadline">Track your favorite shows across streaming services and get reminded when new episodes or seasons are released.</p>
+          <p class="hero-subheadline">Track your favorite TV shows across streaming services and get notified when new episodes and seasons are released.</p>
           <div class="hero-actions">
             <button class="btn-primary" onclick="showRegister()">Start Tracking Free</button>
-            <button class="btn-ghost" onclick="scrollToHowItWorks()">See How It Works</button>
+            <button class="btn-ghost" onclick="scrollToHowItWorks()">Learn More</button>
           </div>
           <div class="trust-row">
             <span>No credit card required</span>
@@ -44,6 +50,14 @@
           </div>
         </div>
 
+        <div class="hero-visual" aria-label="BingeKeeper dashboard preview">
+          <div class="dashboard-screenshot-frame">
+            <img src="/images/dashboard-preview.png" alt="BingeKeeper dashboard showing tracked shows and upcoming episodes">
+          </div>
+        </div>
+      </section>
+
+      <section class="auth-section" aria-label="Create or access your BingeKeeper account">
         <div class="auth-panel">
           <div id="loginForm" class="auth-card">
             <h2>Welcome back</h2>
@@ -91,28 +105,6 @@
         </div>
       </section>
 
-      <section class="demo-section" aria-label="BingeKeeper dashboard preview">
-        <div class="mock-dashboard">
-          <div class="mock-dashboard-top">
-            <div>
-              <p class="eyebrow">Demo watchlist</p>
-              <h2>Your shows in one tidy queue</h2>
-            </div>
-            <div class="mock-stats">
-              <span><strong>5</strong> Tracking</span>
-              <span><strong>3</strong> Upcoming</span>
-            </div>
-          </div>
-          <div class="demo-show-grid">
-            <article><strong>Wednesday</strong><span>Netflix</span><small>Season 2 soon</small></article>
-            <article><strong>The Bear</strong><span>Hulu</span><small>S4E1 tracked</small></article>
-            <article><strong>Reacher</strong><span>Amazon Prime</span><small>New season alert</small></article>
-            <article><strong>Stranger Things</strong><span>Netflix</span><small>Final season watch</small></article>
-            <article><strong>House of the Dragon</strong><span>Max</span><small>Episode reminder</small></article>
-          </div>
-        </div>
-      </section>
-
       <section class="how-section" id="howItWorks">
         <div class="section-heading landing-heading">
           <div>
@@ -134,7 +126,7 @@
           <p>Plus features may be added later as BingeKeeper grows, but the free plan is enough to build a real starter watchlist today.</p>
         </div>
         <button class="btn-primary" onclick="showRegister()">Start Tracking Free</button>
-      </div>
+      </section>
       <div class="public-links">
         <a href="#plus" onclick="showPublicPage('plus')">Plus</a>
         <a href="#support" onclick="showPublicPage('support')">Support</a>
