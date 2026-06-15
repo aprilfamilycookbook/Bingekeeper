@@ -3,63 +3,137 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bingekeeper &mdash; Track Your Shows</title>
+  <title>BingeKeeper &mdash; Never Miss a New Episode</title>
+  <meta name="description" content="Track your favorite shows across streaming services and get reminded when new episodes or seasons are released.">
+  <meta property="og:title" content="BingeKeeper &mdash; Never miss a new episode or season again.">
+  <meta property="og:description" content="Track your favorite shows across streaming services and get reminded when new episodes or seasons are released.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://bingekeeper.tv/">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="BingeKeeper &mdash; Never miss a new episode or season again.">
+  <meta name="twitter:description" content="Track your favorite shows across streaming services and get reminded when new episodes or seasons are released.">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
   <div id="authPage" class="auth-page hidden">
-    <div class="auth-container">
-      <div class="auth-logo">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>
-        Binge<span>keeper</span>
-      </div>
-      <p class="auth-tagline">Track your shows. Never miss an episode.</p>
-      <div class="auth-preview" aria-hidden="true">
-        <div><strong>Tonight</strong><span>2 new episodes</span></div>
-        <div><strong>Watching</strong><span>12 shows kept tidy</span></div>
-      </div>
-      <div id="loginForm" class="auth-card">
-        <h2>Welcome back</h2>
-        <div class="form-group"><label>Email</label><input type="email" id="loginEmail" placeholder="you@example.com"></div>
-        <div class="form-group"><label>Password</label><div class="password-field"><input type="password" id="loginPassword" placeholder="At least 8 characters"><button type="button" class="password-toggle" onclick="togglePassword('loginPassword', this)">Show</button></div></div>
-        <div id="loginError" class="form-error hidden"></div>
-        <button class="btn-primary btn-full" onclick="doLogin()">Sign in</button>
-        <div class="auth-links">
-          <a href="#" onclick="showForgot()">Forgot password?</a>
-          <a href="#" onclick="showRegister()">Create account</a>
+    <div class="landing-shell">
+      <nav class="landing-nav">
+        <div class="brand-logo">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>
+          <span>BingeKeeper</span>
         </div>
-      </div>
-      <div id="registerForm" class="auth-card hidden">
-        <h2>Create your account</h2>
-        <div class="form-group"><label>Your name</label><input type="text" id="regName" placeholder="First name"></div>
-        <div class="form-group"><label>Email</label><input type="email" id="regEmail" placeholder="you@example.com"></div>
-        <div class="form-group"><label>Password</label><div class="password-field"><input type="password" id="regPassword" placeholder="At least 8 characters"><button type="button" class="password-toggle" onclick="togglePassword('regPassword', this)">Show</button></div></div>
-        <div class="form-group"><label>Confirm password</label><div class="password-field"><input type="password" id="regPasswordConfirm" placeholder="Re-enter password"><button type="button" class="password-toggle" onclick="togglePassword('regPasswordConfirm', this)">Show</button></div></div>
-        <div id="regError" class="form-error hidden"></div>
-        <div id="regSuccess" class="form-success hidden"></div>
-        <button class="btn-primary btn-full" onclick="doRegister()">Create account</button>
-        <div class="auth-links"><a href="#" onclick="showLogin()">Already have an account? Sign in</a></div>
-      </div>
-      <div id="forgotForm" class="auth-card hidden">
-        <h2>Reset password</h2>
-        <p class="form-hint">Enter your email and we'll send a reset link.</p>
-        <div class="form-group"><label>Email</label><input type="email" id="forgotEmail" placeholder="you@example.com"></div>
-        <div id="forgotError" class="form-error hidden"></div>
-        <div id="forgotSuccess" class="form-success hidden"></div>
-        <button class="btn-primary btn-full" onclick="doForgot()">Send reset link</button>
-        <div class="auth-links"><a href="#" onclick="showLogin()">Back to sign in</a></div>
-      </div>
-      <div id="resetForm" class="auth-card hidden">
-        <h2>Set new password</h2>
-        <div class="form-group"><label>New password</label><div class="password-field"><input type="password" id="resetPassword" placeholder="At least 8 characters"><button type="button" class="password-toggle" onclick="togglePassword('resetPassword', this)">Show</button></div></div>
-        <div id="resetError" class="form-error hidden"></div>
-        <div id="resetSuccess" class="form-success hidden"></div>
-        <button class="btn-primary btn-full" onclick="doReset()">Update password</button>
-      </div>
-      <div id="verifyForm" class="auth-card hidden">
-        <div class="verify-icon">@</div>
-        <h2>Verifying your email...</h2>
-        <div id="verifyMsg" class="form-hint">Please wait.</div>
+        <div class="landing-nav-links">
+          <button class="btn-ghost" onclick="showLogin()">Sign in</button>
+          <button class="btn-primary" onclick="showRegister()">Start free</button>
+        </div>
+      </nav>
+
+      <section class="landing-hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Show tracking for busy streamers</p>
+          <h1>Never miss a new episode or season again.</h1>
+          <p class="hero-subheadline">Track your favorite shows across streaming services and get reminded when new episodes or seasons are released.</p>
+          <div class="hero-actions">
+            <button class="btn-primary" onclick="showRegister()">Start Tracking Free</button>
+            <button class="btn-ghost" onclick="scrollToHowItWorks()">See How It Works</button>
+          </div>
+          <div class="trust-row">
+            <span>No credit card required</span>
+            <span>Free accounts track up to 10 shows</span>
+            <span>Secure billing through Stripe</span>
+          </div>
+        </div>
+
+        <div class="auth-panel">
+          <div id="loginForm" class="auth-card">
+            <h2>Welcome back</h2>
+            <div class="form-group"><label>Email</label><input type="email" id="loginEmail" placeholder="you@example.com"></div>
+            <div class="form-group"><label>Password</label><div class="password-field"><input type="password" id="loginPassword" placeholder="At least 8 characters"><button type="button" class="password-toggle" onclick="togglePassword('loginPassword', this)">Show</button></div></div>
+            <div id="loginError" class="form-error hidden"></div>
+            <button class="btn-primary btn-full" onclick="doLogin()">Sign in</button>
+            <div class="auth-links">
+              <a href="#" onclick="showForgot()">Forgot password?</a>
+              <a href="#" onclick="showRegister()">Create account</a>
+            </div>
+          </div>
+          <div id="registerForm" class="auth-card hidden">
+            <h2>Create your account</h2>
+            <div class="form-group"><label>Your name</label><input type="text" id="regName" placeholder="First name"></div>
+            <div class="form-group"><label>Email</label><input type="email" id="regEmail" placeholder="you@example.com"></div>
+            <div class="form-group"><label>Password</label><div class="password-field"><input type="password" id="regPassword" placeholder="At least 8 characters"><button type="button" class="password-toggle" onclick="togglePassword('regPassword', this)">Show</button></div></div>
+            <div class="form-group"><label>Confirm password</label><div class="password-field"><input type="password" id="regPasswordConfirm" placeholder="Re-enter password"><button type="button" class="password-toggle" onclick="togglePassword('regPasswordConfirm', this)">Show</button></div></div>
+            <div id="regError" class="form-error hidden"></div>
+            <div id="regSuccess" class="form-success hidden"></div>
+            <button class="btn-primary btn-full" onclick="doRegister()">Create account</button>
+            <div class="auth-links"><a href="#" onclick="showLogin()">Already have an account? Sign in</a></div>
+          </div>
+          <div id="forgotForm" class="auth-card hidden">
+            <h2>Reset password</h2>
+            <p class="form-hint">Enter your email and we'll send a reset link.</p>
+            <div class="form-group"><label>Email</label><input type="email" id="forgotEmail" placeholder="you@example.com"></div>
+            <div id="forgotError" class="form-error hidden"></div>
+            <div id="forgotSuccess" class="form-success hidden"></div>
+            <button class="btn-primary btn-full" onclick="doForgot()">Send reset link</button>
+            <div class="auth-links"><a href="#" onclick="showLogin()">Back to sign in</a></div>
+          </div>
+          <div id="resetForm" class="auth-card hidden">
+            <h2>Set new password</h2>
+            <div class="form-group"><label>New password</label><div class="password-field"><input type="password" id="resetPassword" placeholder="At least 8 characters"><button type="button" class="password-toggle" onclick="togglePassword('resetPassword', this)">Show</button></div></div>
+            <div id="resetError" class="form-error hidden"></div>
+            <div id="resetSuccess" class="form-success hidden"></div>
+            <button class="btn-primary btn-full" onclick="doReset()">Update password</button>
+          </div>
+          <div id="verifyForm" class="auth-card hidden">
+            <div class="verify-icon">@</div>
+            <h2>Verifying your email...</h2>
+            <div id="verifyMsg" class="form-hint">Please wait.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="demo-section" aria-label="BingeKeeper dashboard preview">
+        <div class="mock-dashboard">
+          <div class="mock-dashboard-top">
+            <div>
+              <p class="eyebrow">Demo watchlist</p>
+              <h2>Your shows in one tidy queue</h2>
+            </div>
+            <div class="mock-stats">
+              <span><strong>5</strong> Tracking</span>
+              <span><strong>3</strong> Upcoming</span>
+            </div>
+          </div>
+          <div class="demo-show-grid">
+            <article><strong>Wednesday</strong><span>Netflix</span><small>Season 2 soon</small></article>
+            <article><strong>The Bear</strong><span>Hulu</span><small>S4E1 tracked</small></article>
+            <article><strong>Reacher</strong><span>Amazon Prime</span><small>New season alert</small></article>
+            <article><strong>Stranger Things</strong><span>Netflix</span><small>Final season watch</small></article>
+            <article><strong>House of the Dragon</strong><span>Max</span><small>Episode reminder</small></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="how-section" id="howItWorks">
+        <div class="section-heading landing-heading">
+          <div>
+            <p class="eyebrow">How it works</p>
+            <h2>Start tracking in under a minute</h2>
+          </div>
+        </div>
+        <div class="how-grid">
+          <div><span>1</span><h3>Search for a show</h3><p>Find the series you care about and see where it streams when provider data is available.</p></div>
+          <div><span>2</span><h3>Add it to your watchlist</h3><p>Save its service, status, season, and episode so your queue stays organized.</p></div>
+          <div><span>3</span><h3>Get reminded when new episodes or seasons arrive</h3><p>Choose when you want episode or season emails before new releases arrive.</p></div>
+        </div>
+      </section>
+
+      <section class="free-callout">
+        <div>
+          <p class="eyebrow">Free to start</p>
+          <h2>Free accounts can track up to 10 shows.</h2>
+          <p>Plus features may be added later as BingeKeeper grows, but the free plan is enough to build a real starter watchlist today.</p>
+        </div>
+        <button class="btn-primary" onclick="showRegister()">Start Tracking Free</button>
       </div>
       <div class="public-links">
         <a href="#plus" onclick="showPublicPage('plus')">Plus</a>
@@ -75,7 +149,7 @@
       <div class="public-topbar">
         <div class="logo">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>
-          Binge<span>keeper</span>
+          <span>BingeKeeper</span>
         </div>
         <button class="btn-ghost" onclick="showAuth()">Sign in</button>
       </div>
@@ -88,7 +162,7 @@
       <div class="header-inner">
         <div class="logo">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>
-          Binge<span>keeper</span>
+          <span>BingeKeeper</span>
         </div>
         <div class="header-right">
           <span id="planBadge" class="plan-badge">Free</span>
@@ -162,6 +236,6 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="/js/app.js?v=free-limit-v1"></script>
+  <script src="/js/app.js?v=launch-v1"></script>
 </body>
 </html>

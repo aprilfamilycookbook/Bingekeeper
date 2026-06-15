@@ -57,14 +57,21 @@ function showAuth() {
   document.getElementById('authPage').classList.remove('hidden');
   document.getElementById('appPage').classList.add('hidden');
   document.getElementById('publicPage').classList.add('hidden');
-  showLogin();
+  showLogin(false);
 }
-function showLogin() { hideAllAuthForms(); document.getElementById('loginForm').classList.remove('hidden'); }
-function showRegister() { hideAllAuthForms(); document.getElementById('registerForm').classList.remove('hidden'); }
+function showLogin(shouldScroll = true) { hideAllAuthForms(); document.getElementById('loginForm').classList.remove('hidden'); if (shouldScroll) scrollAuthPanel(); }
+function showRegister(shouldScroll = true) { hideAllAuthForms(); document.getElementById('registerForm').classList.remove('hidden'); if (shouldScroll) scrollAuthPanel(); }
 function showForgot() { hideAllAuthForms(); document.getElementById('forgotForm').classList.remove('hidden'); }
 function showReset(t) { hideAllAuthForms(); document.getElementById('authPage').classList.remove('hidden'); document.getElementById('resetForm').classList.remove('hidden'); document.getElementById('resetForm').dataset.token = t; }
 function showVerify(t) { document.getElementById('authPage').classList.remove('hidden'); hideAllAuthForms(); document.getElementById('verifyForm').classList.remove('hidden'); verifyEmail(t); }
 function hideAllAuthForms() { ['loginForm','registerForm','forgotForm','resetForm','verifyForm'].forEach(id => { document.getElementById(id).classList.add('hidden'); }); }
+function scrollAuthPanel() {
+  const panel = document.querySelector('.auth-panel');
+  if (panel && !document.getElementById('authPage').classList.contains('hidden')) panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+function scrollToHowItWorks() {
+  document.getElementById('howItWorks')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 async function doLogin() {
   const email = document.getElementById('loginEmail').value.trim();
   const password = document.getElementById('loginPassword').value;
