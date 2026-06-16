@@ -443,6 +443,7 @@ async function showAdminSocial() {
   document.getElementById('weeklyRoundupBtn').disabled = weeklyRoundupItems().length === 0;
 }
 function renderAdminSocial() {
+  renderAdminSocialSection('adminTrendingWeek', adminSocialData.trending_this_week || [], 'trending_week');
   renderAdminSocialSection('adminNewSeasons', adminSocialData.new_seasons_today || [], 'season');
   renderAdminSocialSection('adminNewEpisodes', adminSocialData.new_episodes_today || [], 'episode');
   renderAdminSocialSection('adminPremiering', adminSocialData.premiering_this_week || [], 'upcoming');
@@ -463,27 +464,41 @@ function adminSocialCard(item, type, index) {
     item.episode_number ? `Episode ${item.episode_number}` : '',
     item.release_date ? formatAirDate(item.release_date) : '',
     item.services?.length ? item.services.join(', ') : '',
-    item.tracked_count ? `${item.tracked_count} tracked` : ''
+    item.tracked_count ? `${item.tracked_count} tracked` : '',
+    item.vote_count ? `${Number(item.vote_count).toLocaleString()} votes` : '',
+    item.is_major ? 'Major audience' : ''
   ].filter(Boolean);
   return `<article class="admin-social-card">
     ${poster}
     <div class="admin-social-card-body">
       <h3>${esc(item.name)}</h3>
       <div class="admin-social-meta">${meta.map(value => `<span>${esc(value)}</span>`).join('')}</div>
-      <button class="btn-primary btn-full" onclick="copyFacebookPost('${type}', ${index})">Copy Facebook Post</button>
+      <div class="admin-social-actions">
+        <button class="btn-primary btn-full" onclick="copyFacebookPost('${type}', ${index})">Copy Facebook Post</button>
+        <button class="btn-secondary btn-full" onclick="copyQuestionPost('${type}', ${index})">Copy Question Post</button>
+      </div>
     </div>
   </article>`;
 }
 async function copyFacebookPost(type, index) {
+  const item = adminSocialItem(type, index);
+  if (!item) { toast('Post item not found.'); return; }
+  await copyText(facebookPostText(item, type), 'Copied Facebook post.');
+}
+async function copyQuestionPost(type, index) {
+  const item = adminSocialItem(type, index);
+  if (!item) { toast('Post item not found.'); return; }
+  await copyText(questionPostText(item, type), 'Copied question post.');
+}
+function adminSocialItem(type, index) {
   const collections = {
+    trending_week: adminSocialData.trending_this_week || [],
     season: adminSocialData.new_seasons_today || [],
     episode: adminSocialData.new_episodes_today || [],
     upcoming: adminSocialData.premiering_this_week || [],
     trending: adminSocialData.trending_tracked || []
   };
-  const item = collections[type]?.[index];
-  if (!item) { toast('Post item not found.'); return; }
-  await copyText(facebookPostText(item, type));
+  return collections[type]?.[index];
 }
 function facebookPostText(item, type) {
   if (type === 'episode') {
@@ -494,20 +509,31 @@ function facebookPostText(item, type) {
   }
   return `📺 New Season Alert\n\n${item.name}${item.season_number ? ` Season ${item.season_number}` : ''} is now available.\n\nAre you watching?\n\nTrack your favorite shows and never miss a new episode:\nhttps://bingekeeper.tv`;
 }
+function questionPostText(item, type) {
+  const service = item.services?.[0] ? ` on ${item.services[0]}` : '';
+  const season = item.season_number ? ` Season ${item.season_number}` : '';
+  if (type === 'upcoming') {
+    return `${item.name}${season} arrives ${item.release_date ? formatAirDate(item.release_date) : 'soon'}${service}. Are you watching right away or waiting to binge the whole season?\n\nTrack your shows free:\nhttps://bingekeeper.tv`;
+  }
+  if (type === 'episode') {
+    return `${item.name}${season}${item.episode_number ? ` Episode ${item.episode_number}` : ''} is now streaming${service}. Are you watching tonight or saving it for the weekend?\n\nTrack your shows free:\nhttps://bingekeeper.tv`;
+  }
+  return `${item.name}${season} is now streaming${service}. Are you watching immediately or waiting to binge the whole season?\n\nTrack your shows free:\nhttps://bingekeeper.tv`;
+}
 async function copyWeeklyRoundup() {
   const items = weeklyRoundupItems();
   if (!items.length) { toast('No weekly roundup items found.'); return; }
   const lines = items.slice(0, 6).map(item => `📺 ${item.name}${item.season_number ? ` Season ${item.season_number}` : ''}`);
-  await copyText(`🍿 Coming This Week\n\nHere are some shows returning or premiering this week:\n\n${lines.join('\n')}\n\nWhich one are you watching?\n\nTrack your shows free:\nhttps://bingekeeper.tv`);
+  await copyText(`🍿 Coming This Week\n\nHere are some shows returning or premiering this week:\n\n${lines.join('\n')}\n\nWhich one are you watching?\n\nTrack your shows free:\nhttps://bingekeeper.tv`, 'Copied weekly roundup.');
 }
 function weeklyRoundupItems() {
-  return [...(adminSocialData?.premiering_this_week || []), ...(adminSocialData?.new_seasons_today || []), ...(adminSocialData?.new_episodes_today || [])]
+  return [...(adminSocialData?.trending_this_week || []), ...(adminSocialData?.premiering_this_week || []), ...(adminSocialData?.new_seasons_today || []), ...(adminSocialData?.new_episodes_today || [])]
     .filter((item, index, items) => items.findIndex(other => other.show_id === item.show_id) === index);
 }
-async function copyText(text) {
+async function copyText(text, message = 'Copied Facebook post.') {
   try {
     await navigator.clipboard.writeText(text);
-    toast('Copied Facebook post.');
+    toast(message);
   } catch {
     const textarea = document.createElement('textarea');
     textarea.value = text;
@@ -518,7 +544,7 @@ async function copyText(text) {
     textarea.select();
     document.execCommand('copy');
     textarea.remove();
-    toast('Copied Facebook post.');
+    toast(message);
   }
 }
 function openAccount() {

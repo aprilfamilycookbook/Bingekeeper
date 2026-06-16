@@ -56,14 +56,21 @@ export async function handleAdmin(request, env, path) {
 
     const newSeasonsToday = releasedToday.filter(item => item.episode_number === 1 && item.season_number && item.season_number > 1);
     const newEpisodesToday = releasedToday.filter(item => !(item.episode_number === 1 && item.season_number && item.season_number > 1));
+    const trendingThisWeek = editorialPicks([
+      ...newSeasonsToday,
+      ...newEpisodesToday,
+      ...premieringThisWeek,
+      ...trendingPopular
+    ], 10);
 
     return jsonResponse({
       generated_at: new Date().toISOString(),
       sections: {
-        new_seasons_today: newSeasonsToday,
-        new_episodes_today: newEpisodesToday,
-        premiering_this_week: premieringThisWeek,
-        trending_tracked: trendingPopular
+        trending_this_week: trendingThisWeek,
+        new_seasons_today: editorialPicks(newSeasonsToday, 10),
+        new_episodes_today: editorialPicks(newEpisodesToday, 12),
+        premiering_this_week: editorialPicks(premieringThisWeek, 12),
+        trending_tracked: editorialPicks(trendingPopular, 12)
       }
     });
   }
@@ -94,7 +101,7 @@ async function getTrackedShowMeta(env) {
 
 async function getAiringToday(apiKey, trackedMeta, today) {
   const data = await tmdb(apiKey, '/tv/airing_today', { page: '1', timezone: 'America/New_York' });
-  return hydrateShows(apiKey, data.results || [], trackedMeta, show => episodeForDate(show, today), 16);
+  return hydrateShows(apiKey, data.results || [], trackedMeta, show => episodeForDate(show, today), 20);
 }
 
 async function getPremieringThisWeek(apiKey, trackedMeta, today, weekEnd) {
@@ -107,8 +114,8 @@ async function getPremieringThisWeek(apiKey, trackedMeta, today, weekEnd) {
     include_adult: 'false',
     include_null_first_air_dates: 'false'
   });
-  const items = await hydrateShows(apiKey, data.results || [], trackedMeta, show => episodeForDateRange(show, today, weekEnd), 16);
-  return items.filter(item => item.release_date && item.release_date > today && item.release_date <= weekEnd);
+  const items = await hydrateShows(apiKey, data.results || [], trackedMeta, show => episodeForDateRange(show, today, weekEnd), 20);
+  return rankSocialItems(items.filter(item => item.release_date && item.release_date > today && item.release_date <= weekEnd));
 }
 
 async function getTrendingShows(apiKey, trackedMeta) {
@@ -121,7 +128,7 @@ async function getTrendingShows(apiKey, trackedMeta) {
       episode_number: episode.episode_number || null,
       episode_title: episode.name || null
     };
-  }, 12);
+  }, 20);
 }
 
 async function hydrateShows(apiKey, shows, trackedMeta, episodeSelector, limit) {
@@ -151,11 +158,15 @@ async function hydrateShows(apiKey, shows, trackedMeta, episodeSelector, limit) 
       episode_number: episode.episode_number,
       episode_title: episode.episode_title,
       services: [...providers, ...tracked.services],
-      tracked_count: tracked.tracked_count
+      tracked_count: tracked.tracked_count,
+      popularity: hydratedShow.popularity,
+      vote_count: hydratedShow.vote_count,
+      vote_average: hydratedShow.vote_average,
+      networks: (hydratedShow.networks || []).map(network => network.name).filter(Boolean)
     });
   }));
 
-  return items.filter(item => item.name);
+  return rankSocialItems(items.filter(item => item.name));
 }
 
 async function safeSocialSection(loader) {
@@ -222,6 +233,14 @@ function normalizeServices(services) {
 }
 
 function normalizeSocialItem(row) {
+  const services = [...new Set(normalizeServices(row.services))].slice(0, 4);
+  const networks = Array.isArray(row.networks) ? row.networks : normalizeServices(row.networks);
+  const popularity = Number(row.popularity || 0);
+  const voteCount = Number(row.vote_count || 0);
+  const trackedCount = Number(row.tracked_count || 0);
+  const isMajor = isMajorShow({ services, networks, voteCount, popularity, trackedCount });
+  const engagementScore = socialScore({ popularity, voteCount, trackedCount, services, networks });
+
   return {
     show_id: row.show_id,
     name: row.name,
@@ -231,9 +250,60 @@ function normalizeSocialItem(row) {
     season_number: row.season_number || null,
     episode_number: row.episode_number || null,
     episode_title: row.episode_title || null,
-    services: [...new Set(normalizeServices(row.services))].slice(0, 4),
-    tracked_count: Number(row.tracked_count || 0)
+    services,
+    tracked_count: trackedCount,
+    popularity,
+    vote_count: voteCount,
+    vote_average: Number(row.vote_average || 0),
+    networks: networks.slice(0, 3),
+    is_major: isMajor,
+    engagement_score: engagementScore
   };
+}
+
+function editorialPicks(items, limit) {
+  const ranked = rankSocialItems(items);
+  return ranked
+    .filter(item => item.is_major || item.engagement_score >= 70 || item.vote_count >= 500 || item.tracked_count >= 2)
+    .slice(0, limit);
+}
+
+function rankSocialItems(items) {
+  const unique = [];
+  const seen = new Set();
+  for (const item of items) {
+    if (!item?.show_id || seen.has(item.show_id)) continue;
+    seen.add(item.show_id);
+    unique.push(item);
+  }
+  return unique.sort((a, b) =>
+    Number(b.engagement_score || 0) - Number(a.engagement_score || 0) ||
+    Number(b.popularity || 0) - Number(a.popularity || 0) ||
+    Number(b.vote_count || 0) - Number(a.vote_count || 0) ||
+    String(a.name).localeCompare(String(b.name))
+  );
+}
+
+function socialScore({ popularity, voteCount, trackedCount, services, networks }) {
+  const providerBoost = hasMajorService(services) ? 18 : 0;
+  const networkBoost = hasMajorService(networks) ? 12 : 0;
+  const trackedBoost = Math.min(Number(trackedCount || 0) * 8, 40);
+  const voteBoost = Math.min(Math.log10(Number(voteCount || 0) + 1) * 12, 48);
+  return Math.round((Number(popularity || 0) * 1.2) + voteBoost + trackedBoost + providerBoost + networkBoost);
+}
+
+function isMajorShow({ services, networks, voteCount, popularity, trackedCount }) {
+  const majorPlatform = hasMajorService(services) || hasMajorService(networks);
+  const audienceSignal = Number(popularity || 0) >= 35 || Number(voteCount || 0) >= 250 || Number(trackedCount || 0) >= 1;
+  return (majorPlatform && audienceSignal) ||
+    Number(voteCount || 0) >= 1000 ||
+    Number(popularity || 0) >= 80 ||
+    Number(trackedCount || 0) >= 3;
+}
+
+function hasMajorService(values = []) {
+  const major = ['Netflix', 'Hulu', 'Max', 'Disney+', 'Apple TV+', 'Peacock', 'Paramount+', 'Amazon Prime'];
+  return values.some(value => major.includes(normalizeProvider(value)));
 }
 
 function normalizeProvider(name) {

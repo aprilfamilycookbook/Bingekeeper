@@ -537,6 +537,20 @@ body {
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-full { width: 100%; margin-top: 4px; padding: 12px; }
 
+.btn-secondary {
+  padding: 11px 20px;
+  background: rgba(108,99,255,0.12);
+  color: var(--text);
+  border: 1px solid rgba(108,99,255,0.38);
+  border-radius: var(--radius);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.btn-secondary:hover { background: rgba(108,99,255,0.2); }
+.btn-secondary:active { transform: scale(0.98); }
+
 .btn-ghost {
   background: none;
   border: 1px solid var(--border);
@@ -732,6 +746,16 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.5rem; }
   color: var(--text2);
   font-size: 12px;
   padding: 4px 8px;
+}
+
+.admin-social-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.admin-social-actions .btn-full {
+  margin-top: 0;
 }
 
 .empty-state.compact {
