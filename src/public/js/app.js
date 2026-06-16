@@ -31,6 +31,8 @@ let token = localStorage.getItem('bk_token');
 let currentUser = JSON.parse(localStorage.getItem('bk_user') || 'null');
 let watchlist = [];
 let searchResults = [];
+let dashboardRecommendations = [];
+let detailRecommendations = [];
 let pendingAddShow = null;
 let activeTab = 'All';
 let adminSocialData = null;
@@ -248,7 +250,7 @@ async function verifyEmail(t) {
   if (res.error) { msg.style.color = '#ef4444'; msg.textContent = res.error;
   } else { msg.style.color = '#22c55e'; msg.textContent = res.message + ' Redirecting to login...'; setTimeout(() => { window.location.href = '/'; }, 2500); }
 }
-function doLogout() { token = null; currentUser = null; localStorage.removeItem('bk_token'); localStorage.removeItem('bk_user'); watchlist = []; adminSocialData = null; showAuth(); }
+function doLogout() { token = null; currentUser = null; localStorage.removeItem('bk_token'); localStorage.removeItem('bk_user'); watchlist = []; dashboardRecommendations = []; detailRecommendations = []; adminSocialData = null; showAuth(); }
 async function showApp(fromBilling = false) {
   document.getElementById('authPage').classList.add('hidden'); document.getElementById('publicPage').classList.add('hidden'); document.getElementById('adminSocialPage').classList.add('hidden'); document.getElementById('appPage').classList.remove('hidden');
   await refreshCurrentUser();
@@ -268,7 +270,13 @@ async function refreshCurrentUser() {
     localStorage.setItem('bk_user', JSON.stringify(currentUser));
   }
 }
-async function loadWatchlist() { const res = await api('/api/watchlist', 'GET'); if (res.error) { toast('Failed to load watchlist'); return; } watchlist = res.watchlist || []; render(); }
+async function loadWatchlist() {
+  const res = await api('/api/watchlist', 'GET');
+  if (res.error) { toast('Failed to load watchlist'); return; }
+  watchlist = res.watchlist || [];
+  render();
+  loadDashboardRecommendations();
+}
 async function doSearch() {
   const q = document.getElementById('searchInput').value.trim(); if (!q) return;
   const btn = document.getElementById('searchBtn'); const resultsEl = document.getElementById('searchResults');
@@ -284,6 +292,15 @@ function closeSearch() { document.getElementById('searchResults').classList.add(
 function openAdd(index) {
   const show = searchResults[index];
   if (!show) { toast('Search again and choose a show.'); return; }
+  openAddShow(show);
+}
+function openRecommendationAdd(source, index) {
+  const collection = source === 'detail' ? detailRecommendations : dashboardRecommendations;
+  const show = collection[index];
+  if (!show) { toast('Recommendation not found.'); return; }
+  openAddShow(show);
+}
+function openAddShow(show) {
   pendingAddShow = show;
   if (watchlist.find(w => w.show_id === show.id)) { toast('Already in your watchlist!'); return; }
   const service = suggestedService(show);
@@ -299,6 +316,28 @@ async function confirmAdd() {
   const res = await api('/api/watchlist', 'POST', body);
   if (res.error) { toast(res.error); if (res.error.includes('Upgrade')) document.getElementById('plusBanner').classList.remove('hidden'); return; }
   pendingAddShow = null; closeModal(); closeSearch(); await loadWatchlist(); activeTab = 'All'; render(); toast(`"${show.name}" added!`);
+}
+async function openShowDetail(index) {
+  const s = watchlist[index];
+  if (!s) { toast('Show not found.'); return; }
+  detailRecommendations = [];
+  document.getElementById('modalTitle').textContent = s.name;
+  document.getElementById('modalBody').innerHTML = `<div class="show-detail">
+    ${s.poster_path ? `<img class="show-detail-poster" src="https://image.tmdb.org/t/p/w185${s.poster_path}" alt="${esc(s.name)} poster">` : '<div class="show-detail-poster">TV</div>'}
+    <div class="show-detail-copy">
+      <div class="show-badges"><span class="badge ${STATUS_BADGE[s.status]||'b-watching'}">${esc(s.status)}</span><span class="badge b-service">${esc(s.service)}</span></div>
+      <p>${s.overview ? esc(s.overview) : 'No description available yet.'}</p>
+      <div class="show-progress">Season ${s.current_season || 1}, episode ${s.current_episode || 1}</div>
+      ${s.next_episode_date ? `<div class="show-next">Next: S${s.next_season_number || '?'}E${s.next_episode_number || '?'} - ${formatAirDate(s.next_episode_date)}</div>` : ''}
+      <div class="modal-actions detail-actions"><button class="btn-cancel" onclick="openEdit(${index})">Edit</button><button class="btn-cancel" onclick="closeModal()">Close</button></div>
+    </div>
+  </div>
+  <section class="detail-recommendations">
+    <div class="section-heading"><div><p class="eyebrow">Discover</p><h2>You May Also Like</h2></div></div>
+    <div class="recommendation-grid compact" id="detailRecommendations"><div class="search-msg">Loading recommendations...</div></div>
+  </section>`;
+  openModal();
+  await loadShowRecommendations(s.show_id);
 }
 function openEdit(idx) {
   const s = watchlist[idx];
@@ -351,7 +390,7 @@ function render() {
   const list = activeTab==='All'?watchlist:watchlist.filter(s => s.status===activeTab);
   const grid = document.getElementById('watchlistGrid');
   if (!list.length) { grid.innerHTML = `<div class="empty-state"><span class="empty-icon">TV</span><h3>${watchlist.length===0?'Build your first watchlist':'Nothing here yet'}</h3><p>${watchlist.length===0?'Search for a show above, add where you watch it, and Bingekeeper will keep an eye on new episodes.':'Try another status tab or add a show to this category.'}</p><button class="btn-primary" onclick="document.getElementById('searchInput').focus()">Start searching</button></div>`; return; }
-  grid.innerHTML = list.map((s,i) => { const idx=watchlist.indexOf(s); const hasUpcoming=s.next_episode_date&&s.next_episode_date>=todayString(); const nextLabel=s.next_episode_date?`S${s.next_season_number}E${s.next_episode_number} - ${formatAirDate(s.next_episode_date)}`:null; return `<div class="show-card">${s.poster_path?`<img class="show-poster" src="https://image.tmdb.org/t/p/w185${s.poster_path}" alt="${esc(s.name)}" loading="lazy">`:`<div class="show-poster-ph">TV</div>`}${hasUpcoming?`<div class="upcoming-badge">${daysUntilLabel(s.next_episode_date)}</div>`:''}<div class="show-body"><div class="show-title" title="${esc(s.name)}">${esc(s.name)}</div><div class="show-badges"><span class="badge ${STATUS_BADGE[s.status]||'b-watching'}">${s.status}</span><span class="badge b-service">${esc(s.service)}</span></div><div class="show-progress">Season ${s.current_season || 1}, episode ${s.current_episode || 1}</div>${nextLabel?`<div class="show-next">${nextLabel}</div>`:''}<div class="show-actions"><button class="btn-sm" onclick="incrementEpisode(${idx})">+ Episode</button><button class="btn-sm" onclick="nextSeason(${idx})">Next season</button><button class="btn-sm" onclick="openEdit(${idx})">Edit</button><button class="btn-sm btn-sm-danger" onclick="removeShow(${idx})">Remove</button></div></div></div>`; }).join('');
+  grid.innerHTML = list.map((s,i) => { const idx=watchlist.indexOf(s); const hasUpcoming=s.next_episode_date&&s.next_episode_date>=todayString(); const nextLabel=s.next_episode_date?`S${s.next_season_number}E${s.next_episode_number} - ${formatAirDate(s.next_episode_date)}`:null; return `<div class="show-card">${s.poster_path?`<img class="show-poster clickable" src="https://image.tmdb.org/t/p/w185${s.poster_path}" alt="${esc(s.name)}" loading="lazy" onclick="openShowDetail(${idx})">`:`<div class="show-poster-ph clickable" onclick="openShowDetail(${idx})">TV</div>`}${hasUpcoming?`<div class="upcoming-badge">${daysUntilLabel(s.next_episode_date)}</div>`:''}<div class="show-body"><button class="show-title title-button" title="${esc(s.name)}" onclick="openShowDetail(${idx})">${esc(s.name)}</button><div class="show-badges"><span class="badge ${STATUS_BADGE[s.status]||'b-watching'}">${s.status}</span><span class="badge b-service">${esc(s.service)}</span></div><div class="show-progress">Season ${s.current_season || 1}, episode ${s.current_episode || 1}</div>${nextLabel?`<div class="show-next">${nextLabel}</div>`:''}<div class="show-actions"><button class="btn-sm" onclick="incrementEpisode(${idx})">+ Episode</button><button class="btn-sm" onclick="nextSeason(${idx})">Next season</button><button class="btn-sm" onclick="openEdit(${idx})">Edit</button><button class="btn-sm btn-sm-danger" onclick="removeShow(${idx})">Remove</button></div></div></div>`; }).join('');
 }
 function renderDashboard() {
   const watching = watchlist.filter(s => s.status === 'Watching').length;
@@ -371,6 +410,38 @@ function renderDashboard() {
   if (!upcoming.length) { section.classList.add('hidden'); list.innerHTML = ''; return; }
   section.classList.remove('hidden');
   list.innerHTML = upcoming.slice(0, 4).map(s => `<div class="upcoming-item">${s.poster_path?`<img src="https://image.tmdb.org/t/p/w92${s.poster_path}" alt="${esc(s.name)}">`:`<div class="upcoming-poster">TV</div>`}<div><strong>${esc(s.name)}</strong><span>${daysUntilLabel(s.next_episode_date)} - S${s.next_season_number || '?'}E${s.next_episode_number || '?'}</span></div></div>`).join('');
+}
+async function loadDashboardRecommendations() {
+  const section = document.getElementById('dashboardRecommendationsSection');
+  const grid = document.getElementById('dashboardRecommendations');
+  if (!watchlist.length) { dashboardRecommendations = []; section.classList.add('hidden'); grid.innerHTML = ''; return; }
+  const res = await api('/api/recommendations/dashboard', 'GET');
+  if (res.error || !res.recommendations?.length) { dashboardRecommendations = []; section.classList.add('hidden'); grid.innerHTML = ''; return; }
+  dashboardRecommendations = res.recommendations.slice(0, 8);
+  section.classList.remove('hidden');
+  grid.innerHTML = renderRecommendationCards(dashboardRecommendations, 'dashboard');
+}
+async function loadShowRecommendations(showId) {
+  const grid = document.getElementById('detailRecommendations');
+  if (!grid) return;
+  const res = await api(`/api/recommendations?show_id=${encodeURIComponent(showId)}`, 'GET');
+  if (res.error || !res.recommendations?.length) {
+    detailRecommendations = [];
+    grid.innerHTML = '<div class="empty-state compact"><span class="empty-icon">TV</span><h3>No recommendations yet</h3><p>Try another show or check back later.</p></div>';
+    return;
+  }
+  detailRecommendations = res.recommendations.slice(0, 8);
+  grid.innerHTML = renderRecommendationCards(detailRecommendations, 'detail');
+}
+function renderRecommendationCards(items, source) {
+  return items.map((show, index) => `<article class="recommendation-card">
+    ${show.poster_path ? `<img src="https://image.tmdb.org/t/p/w185${show.poster_path}" alt="${esc(show.name)} poster" loading="lazy">` : '<div class="recommendation-poster">TV</div>'}
+    <div class="recommendation-card-body">
+      <h3>${esc(show.name)}</h3>
+      ${show.source_show_name ? `<p>Because you track ${esc(show.source_show_name)}</p>` : '<p>Recommended from your watchlist</p>'}
+      <button class="btn-add" onclick="openRecommendationAdd('${source}', ${index})">+ Add</button>
+    </div>
+  </article>`).join('');
 }
 function syncBillingUi() {
   const isPlus = currentUser?.plan === 'plus';

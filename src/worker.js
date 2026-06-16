@@ -1,6 +1,6 @@
 import { handleAuth } from './auth.js';
 import { handleWatchlist } from './watchlist.js';
-import { handleSearch } from './search.js';
+import { handleRecommendations, handleSearch } from './search.js';
 import { handleCron } from './cron.js';
 import { handleBilling, handleStripeWebhook } from './billing.js';
 import { handleAdmin } from './admin.js';
@@ -34,6 +34,8 @@ export default {
       response = await handleAdmin(request, env, path);
     } else if (path.startsWith('/api/watchlist')) {
       response = await handleWatchlist(request, env, path);
+    } else if (path.startsWith('/api/recommendations')) {
+      response = await handleRecommendations(request, env, url, path);
     } else if (path.startsWith('/api/search')) {
       response = await handleSearch(request, env, url);
     } else if (!path.startsWith('/api/')) {
