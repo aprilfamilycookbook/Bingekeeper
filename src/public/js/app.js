@@ -51,6 +51,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   } else if (window.location.pathname === '/admin/social') { showAdminSocial();
   } else if (token && currentUser) { showApp(billingResult === '#billing=success');
   } else { showAuth(); }
+  registerServiceWorker();
 });
 function getAuthRoute() {
   const hashMatch = window.location.hash.match(/^#(verify|reset)\?(.*)$/);
@@ -90,6 +91,12 @@ function scrollToHowItWorks() {
 function startGoogleLogin() {
   const returnTo = window.location.pathname === '/admin/social' ? '/admin/social' : '/';
   window.location.href = `/auth/google/start?returnTo=${encodeURIComponent(returnTo)}`;
+}
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
 }
 function showOAuthError(message) {
   hideAllAuthForms();
