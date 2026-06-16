@@ -161,6 +161,8 @@ function recommendationScore(show, sourceSignals = {}, matchSources = []) {
   const recencyBoost = recencyScore(firstYear);
   const sourceBoost = (matchSources.includes('recommended') ? 28 : 0) + (matchSources.includes('similar') ? 14 : 0);
   const candidateSignals = showSignals(show);
+  const audienceBoost = sharedAudienceScore(sourceSignals, candidateSignals);
+  const mismatchPenalty = audienceMismatchPenalty(sourceSignals, candidateSignals);
   const creatorBoost = overlapCount(sourceSignals.creatorIds, candidateSignals.creatorIds) * 42;
   const castBoost = Math.min(overlapCount(sourceSignals.castIds, candidateSignals.castIds) * 14, 56);
   const companyBoost = overlapCount(sourceSignals.companyIds, candidateSignals.companyIds) * 12;
@@ -178,6 +180,8 @@ function recommendationScore(show, sourceSignals = {}, matchSources = []) {
     companyBoost +
     networkBoost +
     franchiseBoost -
+    mismatchPenalty +
+    audienceBoost -
     oldPenalty
   );
 }
@@ -201,11 +205,15 @@ function normalizeRecommendation(show, providers = []) {
 }
 
 async function getShowDetails(apiKey, showId) {
-  return tmdb(apiKey, `/tv/${showId}`, { append_to_response: 'aggregate_credits' });
+  return tmdb(apiKey, `/tv/${showId}`, { append_to_response: 'aggregate_credits,keywords' });
 }
 
 function showSignals(show = {}) {
   const title = normalizeText(show.name || show.original_name || '');
+  const overview = normalizeText(show.overview || '');
+  const keywords = (show.keywords?.results || show.keywords?.keywords || []).map(item => normalizeText(item.name)).filter(Boolean);
+  const genres = (show.genres || []).map(item => normalizeText(item.name)).filter(Boolean);
+  const text = [title, overview, ...keywords, ...genres].join(' ');
   const creatorIds = new Set((show.created_by || []).map(person => Number(person.id)).filter(Boolean));
   const networkIds = new Set((show.networks || []).map(network => Number(network.id)).filter(Boolean));
   const companyIds = new Set((show.production_companies || []).map(company => Number(company.id)).filter(Boolean));
@@ -222,7 +230,10 @@ function showSignals(show = {}) {
     networkIds,
     companyIds,
     castIds,
-    universe: detectUniverse(title)
+    universe: detectUniverse(title),
+    clusters: detectAudienceClusters(text),
+    isProcedural: isProceduralText(text),
+    hasGenreOnlyMatchRisk: hasGenreOnlyMatchRisk(text)
   };
 }
 
@@ -231,8 +242,13 @@ function isViableRecommendation(show, score, sourceSignals = {}) {
   const votes = Number(show.vote_count || 0);
   const year = yearFromDate(show.first_air_date);
   const modern = !year || year >= new Date().getFullYear() - 15;
-  const connectedUniverse = sourceSignals.universe && detectUniverse(normalizeText(show.name || show.original_name || '')) === sourceSignals.universe;
+  const candidateSignals = showSignals(show);
+  const connectedUniverse = sourceSignals.universe && candidateSignals.universe === sourceSignals.universe;
   if (connectedUniverse) return score >= 45;
+  if (sourceSignals.clusters?.has('supernatural_fandom')) {
+    const sameAudience = candidateSignals.clusters.has('supernatural_fandom') || candidateSignals.clusters.has('ya_fantasy') || candidateSignals.clusters.has('monster_mystery');
+    if (!sameAudience && candidateSignals.isProcedural && score < 160) return false;
+  }
   if (year && year < 2000 && popularity < 45 && votes < 800) return false;
   if (!modern && popularity < 65 && votes < 1500 && score < 105) return false;
   return score >= 55 || popularity >= 45 || votes >= 1000;
@@ -262,6 +278,8 @@ function franchiseRelationshipScore(sourceSignals, candidateSignals) {
   let score = 0;
   if (sourceSignals.universe && sourceSignals.universe === candidateSignals.universe) score += 90;
   if (sourceSignals.universe === 'yellowstone' && isTaylorSheridanAdjacent(candidateSignals.title)) score += 38;
+  if (sourceSignals.universe === 'buffyverse' && candidateSignals.universe === 'buffyverse') score += 100;
+  if (sourceSignals.universe === 'tvd' && candidateSignals.universe === 'tvd') score += 100;
   return score;
 }
 
@@ -274,6 +292,8 @@ function detectUniverse(title) {
     title.includes('marshals') ||
     title.includes('dutton')
   ) return 'yellowstone';
+  if (title.includes('buffy') || title === 'angel') return 'buffyverse';
+  if (title.includes('vampire diaries') || title.includes('the originals') || title.includes('legacies')) return 'tvd';
   return '';
 }
 
@@ -293,6 +313,66 @@ function overlapCount(a = new Set(), b = new Set()) {
   let count = 0;
   for (const item of a) if (b.has(item)) count++;
   return count;
+}
+
+function sharedAudienceScore(sourceSignals, candidateSignals) {
+  const overlap = overlapCount(sourceSignals.clusters, candidateSignals.clusters);
+  let score = overlap * 36;
+  if (sourceSignals.clusters?.has('supernatural_fandom')) {
+    if (candidateSignals.clusters.has('supernatural_fandom')) score += 80;
+    if (candidateSignals.clusters.has('monster_mystery')) score += 44;
+    if (candidateSignals.clusters.has('ya_fantasy')) score += 34;
+    if (candidateSignals.clusters.has('occult_romance')) score += 22;
+  }
+  return score;
+}
+
+function audienceMismatchPenalty(sourceSignals, candidateSignals) {
+  let penalty = 0;
+  if (sourceSignals.clusters?.has('supernatural_fandom')) {
+    const sameFandom = candidateSignals.clusters.has('supernatural_fandom') ||
+      candidateSignals.clusters.has('monster_mystery') ||
+      candidateSignals.clusters.has('ya_fantasy') ||
+      candidateSignals.universe === 'buffyverse' ||
+      candidateSignals.universe === 'tvd';
+    if (!sameFandom && candidateSignals.isProcedural) penalty += 120;
+    if (!sameFandom && candidateSignals.hasGenreOnlyMatchRisk) penalty += 55;
+  }
+  return penalty;
+}
+
+function detectAudienceClusters(text) {
+  const clusters = new Set();
+  if (hasAny(text, ['supernatural', 'demon', 'angel', 'vampire', 'werewolf', 'witch', 'ghost', 'occult', 'paranormal', 'monster', 'hunter', 'curse', 'magic', 'hell', 'heaven'])) {
+    clusters.add('supernatural_fandom');
+  }
+  if (hasAny(text, ['monster', 'creature', 'paranormal investigation', 'urban legend', 'x files', 'fbi paranormal', 'demon hunter', 'monster hunter'])) {
+    clusters.add('monster_mystery');
+  }
+  if (hasAny(text, ['teen', 'high school', 'young adult', 'coming of age', 'teenage', 'academy']) && hasAny(text, ['vampire', 'werewolf', 'witch', 'supernatural', 'magic'])) {
+    clusters.add('ya_fantasy');
+  }
+  if (hasAny(text, ['vampire', 'werewolf', 'witch', 'romance', 'love triangle', 'immortal'])) {
+    clusters.add('occult_romance');
+  }
+  if (hasAny(text, ['western', 'ranch', 'frontier', 'sheriff', 'dutton', 'cowboy', 'texas', 'montana'])) {
+    clusters.add('modern_western');
+  }
+  return clusters;
+}
+
+function isProceduralText(text) {
+  return hasAny(text, ['police procedural', 'detective', 'case of the week', 'crime scene', 'forensic', 'homicide', 'district attorney', 'consultant', 'cop', 'law enforcement']) &&
+    !hasAny(text, ['supernatural', 'paranormal', 'vampire', 'werewolf', 'witch', 'demon', 'angel', 'occult', 'monster']);
+}
+
+function hasGenreOnlyMatchRisk(text) {
+  return hasAny(text, ['crime', 'drama', 'mystery', 'police', 'detective']) &&
+    !hasAny(text, ['supernatural', 'paranormal', 'fantasy', 'vampire', 'werewolf', 'witch', 'demon', 'monster', 'occult']);
+}
+
+function hasAny(text, terms) {
+  return terms.some(term => text.includes(term));
 }
 
 function yearFromDate(date) {
