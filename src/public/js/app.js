@@ -451,7 +451,7 @@ function renderAdminSocial() {
 function renderAdminSocialSection(id, items, type) {
   const el = document.getElementById(id);
   if (!items.length) {
-    el.innerHTML = '<div class="empty-state compact"><span class="empty-icon">TV</span><h3>No items found</h3><p>Nothing in this category from current tracked release data.</p></div>';
+    el.innerHTML = "<div class=\"empty-state compact\"><span class=\"empty-icon\">TV</span><h3>No items found</h3><p>Nothing in this category from today's popular TV release data.</p></div>";
     return;
   }
   el.innerHTML = items.map((item, index) => adminSocialCard(item, type, index)).join('');
