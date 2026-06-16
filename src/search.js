@@ -47,6 +47,7 @@ export async function handleRecommendations(request, env, url, path) {
 
     const showId = Number(url.searchParams.get('show_id'));
     if (!showId) return jsonResponse({ error: 'show_id required' }, 400);
+    trackedIds.add(showId);
     const sourceShow = tracked.find(show => Number(show.show_id) === showId) || { show_id: showId, name: '' };
     const recommendations = await recommendationsForSources(tmdbApiKey, [sourceShow], trackedIds, 8);
     return jsonResponse({ source: 'tmdb', strategy: 'show_recommendations', recommendations });
@@ -81,17 +82,42 @@ async function recommendationsForSources(apiKey, sourceShows, trackedIds, limit)
   const collected = [];
   for (const source of sourceShows) {
     if (!source?.show_id) continue;
-    const data = await tmdb(apiKey, `/tv/${source.show_id}/recommendations`, { page: '1' }).catch(() => ({ results: [] }));
-    for (const show of data.results || []) {
+    const sourceDetails = await getShowDetails(apiKey, source.show_id).catch(() => ({}));
+    const sourceSignals = showSignals({ ...source, ...sourceDetails });
+    const [recommended, similar] = await Promise.all([
+      tmdb(apiKey, `/tv/${source.show_id}/recommendations`, { page: '1' }).catch(() => ({ results: [] })),
+      tmdb(apiKey, `/tv/${source.show_id}/similar`, { page: '1' }).catch(() => ({ results: [] }))
+    ]);
+    const candidates = [
+      ...(recommended.results || []).map(show => ({ ...show, match_sources: ['recommended'] })),
+      ...(similar.results || []).map(show => ({ ...show, match_sources: ['similar'] }))
+    ];
+    const prefilteredCandidates = dedupeRawCandidates(candidates)
+      .sort((a, b) => basicCandidateScore(b) - basicCandidateScore(a))
+      .slice(0, 24);
+
+    for (const show of prefilteredCandidates) {
       if (!show?.id || trackedIds.has(Number(show.id))) continue;
-      collected.push({ ...show, source_show_id: Number(source.show_id), source_show_name: source.name || '' });
+      const candidateDetails = await getShowDetails(apiKey, show.id).catch(() => ({}));
+      const hydrated = { ...show, ...candidateDetails };
+      const matchSources = [...new Set(show.match_sources || ['recommended'])];
+      const score = recommendationScore(hydrated, sourceSignals, matchSources);
+      if (!isViableRecommendation(hydrated, score, sourceSignals)) continue;
+      collected.push({
+        ...hydrated,
+        match_sources: matchSources,
+        recommendation_score: score,
+        source_show_id: Number(source.show_id),
+        source_show_name: source.name || sourceDetails.name || ''
+      });
     }
   }
 
   const unique = dedupeRecommendations(collected)
     .sort((a, b) =>
-      recommendationScore(b) - recommendationScore(a) ||
+      Number(b.recommendation_score || 0) - Number(a.recommendation_score || 0) ||
       Number(b.popularity || 0) - Number(a.popularity || 0) ||
+      Number(b.vote_count || 0) - Number(a.vote_count || 0) ||
       String(a.name).localeCompare(String(b.name))
     )
     .slice(0, limit);
@@ -99,19 +125,61 @@ async function recommendationsForSources(apiKey, sourceShows, trackedIds, limit)
   return Promise.all(unique.map(async show => normalizeRecommendation(show, await getProviders(apiKey, show.id))));
 }
 
-function dedupeRecommendations(shows) {
+function dedupeRawCandidates(shows) {
   const byId = new Map();
   for (const show of shows) {
+    if (!show?.id) continue;
     const existing = byId.get(show.id);
-    if (!existing || recommendationScore(show) > recommendationScore(existing)) byId.set(show.id, show);
+    if (!existing) {
+      byId.set(show.id, show);
+    } else {
+      existing.match_sources = [...new Set([...(existing.match_sources || []), ...(show.match_sources || [])])];
+      if (basicCandidateScore(show) > basicCandidateScore(existing)) byId.set(show.id, { ...existing, ...show, match_sources: existing.match_sources });
+    }
   }
   return [...byId.values()];
 }
 
-function recommendationScore(show) {
+function basicCandidateScore(show) {
+  return Number(show.popularity || 0) + Math.min(Math.log10(Number(show.vote_count || 0) + 1) * 12, 42) + recencyScore(yearFromDate(show.first_air_date));
+}
+
+function dedupeRecommendations(shows) {
+  const byId = new Map();
+  for (const show of shows) {
+    const existing = byId.get(show.id);
+    if (!existing || Number(show.recommendation_score || 0) > Number(existing.recommendation_score || 0)) byId.set(show.id, show);
+  }
+  return [...byId.values()];
+}
+
+function recommendationScore(show, sourceSignals = {}, matchSources = []) {
   const popularity = Number(show.popularity || 0);
   const votes = Number(show.vote_count || 0);
-  return popularity + Math.min(Math.log10(votes + 1) * 12, 42);
+  const firstYear = yearFromDate(show.first_air_date);
+  const voteBoost = Math.min(Math.log10(votes + 1) * 14, 52);
+  const recencyBoost = recencyScore(firstYear);
+  const sourceBoost = (matchSources.includes('recommended') ? 28 : 0) + (matchSources.includes('similar') ? 14 : 0);
+  const candidateSignals = showSignals(show);
+  const creatorBoost = overlapCount(sourceSignals.creatorIds, candidateSignals.creatorIds) * 42;
+  const castBoost = Math.min(overlapCount(sourceSignals.castIds, candidateSignals.castIds) * 14, 56);
+  const companyBoost = overlapCount(sourceSignals.companyIds, candidateSignals.companyIds) * 12;
+  const networkBoost = overlapCount(sourceSignals.networkIds, candidateSignals.networkIds) * 8;
+  const franchiseBoost = franchiseRelationshipScore(sourceSignals, candidateSignals);
+  const oldPenalty = oldCatalogPenalty(firstYear, popularity, votes, creatorBoost + castBoost + franchiseBoost);
+
+  return Math.round(
+    popularity * 1.35 +
+    voteBoost +
+    recencyBoost +
+    sourceBoost +
+    creatorBoost +
+    castBoost +
+    companyBoost +
+    networkBoost +
+    franchiseBoost -
+    oldPenalty
+  );
 }
 
 function normalizeRecommendation(show, providers = []) {
@@ -126,8 +194,114 @@ function normalizeRecommendation(show, providers = []) {
     source_show_id: show.source_show_id || null,
     source_show_name: show.source_show_name || '',
     popularity: Number(show.popularity || 0),
-    vote_count: Number(show.vote_count || 0)
+    vote_count: Number(show.vote_count || 0),
+    recommendation_score: Number(show.recommendation_score || 0),
+    match_sources: show.match_sources || []
   };
+}
+
+async function getShowDetails(apiKey, showId) {
+  return tmdb(apiKey, `/tv/${showId}`, { append_to_response: 'aggregate_credits' });
+}
+
+function showSignals(show = {}) {
+  const title = normalizeText(show.name || show.original_name || '');
+  const creatorIds = new Set((show.created_by || []).map(person => Number(person.id)).filter(Boolean));
+  const networkIds = new Set((show.networks || []).map(network => Number(network.id)).filter(Boolean));
+  const companyIds = new Set((show.production_companies || []).map(company => Number(company.id)).filter(Boolean));
+  const castIds = new Set((show.aggregate_credits?.cast || [])
+    .slice()
+    .sort((a, b) => Number(a.order ?? 99) - Number(b.order ?? 99))
+    .slice(0, 14)
+    .map(person => Number(person.id))
+    .filter(Boolean));
+  return {
+    title,
+    firstYear: yearFromDate(show.first_air_date),
+    creatorIds,
+    networkIds,
+    companyIds,
+    castIds,
+    universe: detectUniverse(title)
+  };
+}
+
+function isViableRecommendation(show, score, sourceSignals = {}) {
+  const popularity = Number(show.popularity || 0);
+  const votes = Number(show.vote_count || 0);
+  const year = yearFromDate(show.first_air_date);
+  const modern = !year || year >= new Date().getFullYear() - 15;
+  const connectedUniverse = sourceSignals.universe && detectUniverse(normalizeText(show.name || show.original_name || '')) === sourceSignals.universe;
+  if (connectedUniverse) return score >= 45;
+  if (year && year < 2000 && popularity < 45 && votes < 800) return false;
+  if (!modern && popularity < 65 && votes < 1500 && score < 105) return false;
+  return score >= 55 || popularity >= 45 || votes >= 1000;
+}
+
+function recencyScore(year) {
+  if (!year) return 4;
+  const currentYear = new Date().getFullYear();
+  const age = currentYear - year;
+  if (age <= 3) return 34;
+  if (age <= 8) return 28;
+  if (age <= 15) return 20;
+  if (age <= 25) return 5;
+  return -28;
+}
+
+function oldCatalogPenalty(year, popularity, votes, relationshipScore) {
+  if (!year) return 0;
+  if (year >= new Date().getFullYear() - 15) return 0;
+  const age = new Date().getFullYear() - year;
+  const audience = Number(popularity || 0) + Math.min(Math.log10(Number(votes || 0) + 1) * 12, 42);
+  const penalty = Math.max(0, age - 15) * 3.2;
+  return Math.max(0, penalty - audience * 0.22 - Number(relationshipScore || 0) * 0.55);
+}
+
+function franchiseRelationshipScore(sourceSignals, candidateSignals) {
+  let score = 0;
+  if (sourceSignals.universe && sourceSignals.universe === candidateSignals.universe) score += 90;
+  if (sourceSignals.universe === 'yellowstone' && isTaylorSheridanAdjacent(candidateSignals.title)) score += 38;
+  return score;
+}
+
+function detectUniverse(title) {
+  if (!title) return '';
+  if (
+    title.includes('yellowstone') ||
+    title.includes('1883') ||
+    title.includes('1923') ||
+    title.includes('marshals') ||
+    title.includes('dutton')
+  ) return 'yellowstone';
+  return '';
+}
+
+function isTaylorSheridanAdjacent(title) {
+  return [
+    'landman',
+    'lawmen bass reeves',
+    'mayor of kingstown',
+    'tulsa king',
+    'lioness',
+    'special ops lioness',
+    'the last cowboy'
+  ].some(name => title.includes(name));
+}
+
+function overlapCount(a = new Set(), b = new Set()) {
+  let count = 0;
+  for (const item of a) if (b.has(item)) count++;
+  return count;
+}
+
+function yearFromDate(date) {
+  const year = Number(String(date || '').slice(0, 4));
+  return Number.isFinite(year) && year > 0 ? year : 0;
+}
+
+function normalizeText(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
 async function tmdb(apiKey, path, params = {}) {
