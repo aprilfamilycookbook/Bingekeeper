@@ -85,6 +85,7 @@
             <div class="form-group"><label>Email</label><input type="email" id="regEmail" placeholder="you@example.com"></div>
             <div class="form-group"><label>Password</label><div class="password-field"><input type="password" id="regPassword" placeholder="At least 8 characters"><button type="button" class="password-toggle" onclick="togglePassword('regPassword', this)">Show</button></div></div>
             <div class="form-group"><label>Confirm password</label><div class="password-field"><input type="password" id="regPasswordConfirm" placeholder="Re-enter password"><button type="button" class="password-toggle" onclick="togglePassword('regPasswordConfirm', this)">Show</button></div></div>
+            <div class="turnstile-wrap" id="registerTurnstileWrap"><div id="registerTurnstile" class="turnstile-widget"></div></div>
             <div id="regError" class="form-error hidden"></div>
             <div id="regSuccess" class="form-success hidden"></div>
             <button class="btn-primary btn-full" onclick="doRegister()">Create account</button>
@@ -96,6 +97,7 @@
             <h2>Reset password</h2>
             <p class="form-hint">Enter your email and we'll send a reset link.</p>
             <div class="form-group"><label>Email</label><input type="email" id="forgotEmail" placeholder="you@example.com"></div>
+            <div class="turnstile-wrap" id="forgotTurnstileWrap"><div id="forgotTurnstile" class="turnstile-widget"></div></div>
             <div id="forgotError" class="form-error hidden"></div>
             <div id="forgotSuccess" class="form-success hidden"></div>
             <button class="btn-primary btn-full" onclick="doForgot()">Send reset link</button>
@@ -309,6 +311,7 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
   <script src="/js/app.js?v=launch-v1"></script>
 </body>
 </html>

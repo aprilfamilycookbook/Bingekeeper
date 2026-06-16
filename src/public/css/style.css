@@ -397,6 +397,20 @@ body {
 }
 .form-hint { font-size: 13px; color: var(--text2); margin-bottom: 14px; }
 
+.turnstile-wrap {
+  display: flex;
+  justify-content: center;
+  min-height: 70px;
+  margin: 4px 0 14px;
+  overflow: hidden;
+}
+.turnstile-widget {
+  max-width: 100%;
+}
+.turnstile-widget iframe {
+  max-width: 100%;
+}
+
 .form-error {
   background: var(--red-bg);
   color: var(--red);

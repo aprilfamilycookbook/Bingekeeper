@@ -33,11 +33,49 @@ const OAUTH_PROVIDERS = {
   // Facebook can be added later with the same start/callback shape.
 };
 
+const TURNSTILE_SITE_KEY = '0x4AAAAAADlYKalja0cX172h';
+
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { 'Content-Type': 'application/json' }
   });
+}
+
+async function verifyTurnstile(env, token, request, expectedAction) {
+  if (!env.TURNSTILE_SECRET_KEY) {
+    return { ok: false, error: 'Security check is not available right now. Please try again soon.' };
+  }
+
+  if (!token) {
+    return { ok: false, error: 'Please complete the security check before continuing.' };
+  }
+
+  try {
+    const body = new URLSearchParams({
+      secret: env.TURNSTILE_SECRET_KEY,
+      response: token
+    });
+    const remoteIp = request.headers.get('CF-Connecting-IP');
+    if (remoteIp) body.set('remoteip', remoteIp);
+
+    const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      body
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.success) {
+      return { ok: false, error: 'Security check failed. Please refresh and try again.' };
+    }
+
+    if (expectedAction && result.action && result.action !== expectedAction) {
+      return { ok: false, error: 'Security check failed. Please refresh and try again.' };
+    }
+
+    return { ok: true };
+  } catch {
+    return { ok: false, error: 'Security check failed. Please refresh and try again.' };
+  }
 }
 
 async function createJWT(userId, email, secret) {
@@ -69,6 +107,10 @@ export async function verifyJWT(token, secret) {
 export async function handleAuth(request, env, path) {
   const body = request.method === 'POST' ? await request.json().catch(() => ({})) : {};
 
+  if (path === '/api/auth/config' && request.method === 'GET') {
+    return jsonResponse({ turnstileSiteKey: env.TURNSTILE_SITE_KEY || TURNSTILE_SITE_KEY });
+  }
+
   if ((path === '/auth/google/start' || path === '/api/auth/google/start') && request.method === 'GET') {
     return startOAuth(request, env, 'google');
   }
@@ -99,9 +141,11 @@ export async function handleAuth(request, env, path) {
   }
 
   if (path === '/api/auth/register' && request.method === 'POST') {
-    const { email, password, name } = body;
+    const { email, password, name, turnstileToken } = body;
     if (!email || !password || !name) return jsonResponse({ error: 'All fields required' }, 400);
     if (password.length < 8) return jsonResponse({ error: 'Password must be at least 8 characters' }, 400);
+    const turnstile = await verifyTurnstile(env, turnstileToken, request, 'register');
+    if (!turnstile.ok) return jsonResponse({ error: turnstile.error }, 400);
     const existing = await env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email.toLowerCase()).first();
     if (existing) return jsonResponse({ error: 'Email already registered' }, 409);
     const hash = await hashPassword(password);
@@ -133,7 +177,10 @@ export async function handleAuth(request, env, path) {
   }
 
   if (path === '/api/auth/forgot' && request.method === 'POST') {
-    const { email } = body;
+    const { email, turnstileToken } = body;
+    if (!email) return jsonResponse({ error: 'Please enter your email' }, 400);
+    const turnstile = await verifyTurnstile(env, turnstileToken, request, 'password_reset');
+    if (!turnstile.ok) return jsonResponse({ error: turnstile.error }, 400);
     const user = await env.DB.prepare('SELECT id, name FROM users WHERE email = ?').bind(email.toLowerCase()).first();
     if (!user) return jsonResponse({ message: 'If that email exists, a reset link has been sent.' });
     const token = generateToken();

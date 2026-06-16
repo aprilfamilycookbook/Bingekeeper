@@ -34,7 +34,12 @@ let searchResults = [];
 let pendingAddShow = null;
 let activeTab = 'All';
 let adminSocialData = null;
-window.addEventListener('DOMContentLoaded', () => {
+let authConfig = { turnstileSiteKey: '' };
+const turnstileWidgets = { register: null, forgot: null };
+const turnstileActions = { register: 'register', forgot: 'password_reset' };
+
+window.addEventListener('DOMContentLoaded', async () => {
+  await loadAuthConfig();
   const route = getAuthRoute();
   const billingResult = window.location.hash;
   const oauthResult = getOAuthResult();
@@ -70,8 +75,8 @@ function showAuth() {
   showLogin(false);
 }
 function showLogin(shouldScroll = true) { hideAllAuthForms(); document.getElementById('loginForm').classList.remove('hidden'); if (shouldScroll) scrollAuthPanel(); }
-function showRegister(shouldScroll = true) { hideAllAuthForms(); document.getElementById('registerForm').classList.remove('hidden'); if (shouldScroll) scrollAuthPanel(); }
-function showForgot() { hideAllAuthForms(); document.getElementById('forgotForm').classList.remove('hidden'); }
+function showRegister(shouldScroll = true) { hideAllAuthForms(); document.getElementById('registerForm').classList.remove('hidden'); renderTurnstile('register'); if (shouldScroll) scrollAuthPanel(); }
+function showForgot() { hideAllAuthForms(); document.getElementById('forgotForm').classList.remove('hidden'); renderTurnstile('forgot'); }
 function showReset(t) { hideAllAuthForms(); document.getElementById('authPage').classList.remove('hidden'); document.getElementById('resetForm').classList.remove('hidden'); document.getElementById('resetForm').dataset.token = t; }
 function showVerify(t) { document.getElementById('authPage').classList.remove('hidden'); hideAllAuthForms(); document.getElementById('verifyForm').classList.remove('hidden'); verifyEmail(t); }
 function hideAllAuthForms() { ['loginForm','registerForm','forgotForm','resetForm','verifyForm'].forEach(id => { document.getElementById(id).classList.add('hidden'); }); }
@@ -93,6 +98,50 @@ function showOAuthError(message) {
   loginForm.classList.remove('hidden');
   showError(errEl, message);
   window.history.replaceState(null, '', '/');
+}
+async function loadAuthConfig() {
+  const res = await api('/api/auth/config', 'GET');
+  if (!res.error) authConfig = { ...authConfig, ...res };
+  syncTurnstileUi();
+}
+function syncTurnstileUi() {
+  ['register', 'forgot'].forEach(name => {
+    const wrap = document.getElementById(`${name}TurnstileWrap`);
+    if (wrap) wrap.classList.toggle('hidden', !authConfig.turnstileSiteKey);
+  });
+}
+function renderTurnstile(name) {
+  const container = document.getElementById(`${name}Turnstile`);
+  if (!container || !authConfig.turnstileSiteKey) return;
+  if (!window.turnstile) {
+    setTimeout(() => renderTurnstile(name), 250);
+    return;
+  }
+  if (turnstileWidgets[name] !== null) {
+    resetTurnstile(name);
+    return;
+  }
+  try {
+    turnstileWidgets[name] = window.turnstile.render(container, {
+      sitekey: authConfig.turnstileSiteKey,
+      theme: 'dark',
+      size: 'flexible',
+      action: turnstileActions[name]
+    });
+  } catch {
+    turnstileWidgets[name] = window.turnstile.render(container, {
+      sitekey: authConfig.turnstileSiteKey,
+      theme: 'dark',
+      action: turnstileActions[name]
+    });
+  }
+}
+function getTurnstileToken(name) {
+  if (!authConfig.turnstileSiteKey || !window.turnstile || turnstileWidgets[name] === null) return '';
+  return window.turnstile.getResponse(turnstileWidgets[name]) || '';
+}
+function resetTurnstile(name) {
+  if (window.turnstile && turnstileWidgets[name] !== null) window.turnstile.reset(turnstileWidgets[name]);
 }
 async function doLogin() {
   const email = document.getElementById('loginEmail').value.trim();
@@ -118,20 +167,28 @@ async function doRegister() {
   errEl.classList.add('hidden'); successEl.classList.add('hidden');
   if (!name || !email || !password || !passwordConfirm) { showError(errEl, 'Please fill in all fields'); return; }
   if (password !== passwordConfirm) { showError(errEl, 'Passwords do not match'); return; }
+  const turnstileToken = getTurnstileToken('register');
+  if (!turnstileToken) { showError(errEl, 'Please complete the security check before creating your account.'); return; }
   const btn = event.target; btn.disabled = true; btn.textContent = 'Creating account...';
-  const res = await api('/api/auth/register', 'POST', { name, email, password });
+  const res = await api('/api/auth/register', 'POST', { name, email, password, turnstileToken });
   btn.disabled = false; btn.textContent = 'Create account';
-  if (res.error) { showError(errEl, res.error); return; }
+  if (res.error) { resetTurnstile('register'); showError(errEl, res.error); return; }
   successEl.textContent = res.message; successEl.classList.remove('hidden');
+  resetTurnstile('register');
 }
 async function doForgot() {
   const email = document.getElementById('forgotEmail').value.trim();
   const errEl = document.getElementById('forgotError'); const successEl = document.getElementById('forgotSuccess');
   errEl.classList.add('hidden'); successEl.classList.add('hidden');
   if (!email) { showError(errEl, 'Please enter your email'); return; }
-  const res = await api('/api/auth/forgot', 'POST', { email });
-  if (res.error) { showError(errEl, res.error); return; }
+  const turnstileToken = getTurnstileToken('forgot');
+  if (!turnstileToken) { showError(errEl, 'Please complete the security check before sending a reset link.'); return; }
+  const btn = event.target; btn.disabled = true; btn.textContent = 'Sending reset link...';
+  const res = await api('/api/auth/forgot', 'POST', { email, turnstileToken });
+  btn.disabled = false; btn.textContent = 'Send reset link';
+  if (res.error) { resetTurnstile('forgot'); showError(errEl, res.error); return; }
   successEl.textContent = res.message; successEl.classList.remove('hidden');
+  resetTurnstile('forgot');
 }
 async function doReset() {
   const password = document.getElementById('resetPassword').value;
