@@ -1,9 +1,9 @@
-const CACHE_NAME = 'bingekeeper-pwa-v1';
+const CACHE_NAME = 'bingekeeper-pwa-v2';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/css/style.css',
-  '/js/app.js?v=launch-v1',
+  '/js/app.js?v=launch-v2',
   '/manifest.webmanifest',
   '/images/logo.png',
   '/images/dashboard-preview.png',

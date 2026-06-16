@@ -35,10 +35,24 @@ let pendingAddShow = null;
 let activeTab = 'All';
 let adminSocialData = null;
 let authConfig = { turnstileSiteKey: '' };
+let deferredInstallPrompt = null;
 const turnstileWidgets = { register: null, forgot: null };
 const turnstileActions = { register: 'register', forgot: 'password_reset' };
 
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  syncInstallButtons();
+});
+
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  syncInstallButtons();
+  toast('BingeKeeper installed.');
+});
+
 window.addEventListener('DOMContentLoaded', async () => {
+  registerServiceWorker();
   await loadAuthConfig();
   const route = getAuthRoute();
   const billingResult = window.location.hash;
@@ -51,7 +65,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   } else if (window.location.pathname === '/admin/social') { showAdminSocial();
   } else if (token && currentUser) { showApp(billingResult === '#billing=success');
   } else { showAuth(); }
-  registerServiceWorker();
+  syncInstallButtons();
 });
 function getAuthRoute() {
   const hashMatch = window.location.hash.match(/^#(verify|reset)\?(.*)$/);
@@ -94,9 +108,29 @@ function startGoogleLogin() {
 }
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  const register = () => navigator.serviceWorker.register('/sw.js').catch(() => {});
+  if (document.readyState === 'complete') register();
+  else window.addEventListener('load', register, { once: true });
+}
+function isStandaloneApp() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+function syncInstallButtons() {
+  const canInstall = Boolean(deferredInstallPrompt) && !isStandaloneApp();
+  ['installAppBtn', 'installAppBtnHeader'].forEach(id => {
+    const button = document.getElementById(id);
+    if (button) button.classList.toggle('hidden', !canInstall);
   });
+}
+async function installApp() {
+  if (!deferredInstallPrompt) {
+    toast('In Chrome, open the menu and tap Add to Home screen.');
+    return;
+  }
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice.catch(() => null);
+  deferredInstallPrompt = null;
+  syncInstallButtons();
 }
 function showOAuthError(message) {
   hideAllAuthForms();

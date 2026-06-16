@@ -41,6 +41,7 @@
           <span>BingeKeeper</span>
         </div>
         <div class="landing-nav-links">
+          <button class="btn-ghost hidden" id="installAppBtn" onclick="installApp()">Install app</button>
           <button class="btn-ghost" onclick="showLogin()">Sign in</button>
           <button class="btn-primary" onclick="showRegister()">Start free</button>
         </div>
@@ -180,6 +181,7 @@
         </div>
         <div class="header-right">
           <span id="planBadge" class="plan-badge">Free</span>
+          <button class="btn-ghost hidden" id="installAppBtnHeader" onclick="installApp()">Install</button>
           <button class="btn-ghost hidden" id="adminSocialBtn" onclick="openAdminSocial()">Social</button>
           <button class="btn-ghost" id="billingBtn" onclick="openBilling()">Upgrade</button>
           <button class="btn-ghost" onclick="openAccount()">Account</button>
@@ -321,6 +323,6 @@
 
   <div id="toast" class="toast hidden"></div>
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
-  <script src="/js/app.js?v=launch-v1"></script>
+  <script src="/js/app.js?v=launch-v2"></script>
 </body>
 </html>
