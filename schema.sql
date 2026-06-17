@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS shows (
   next_episode_date TEXT,
   next_season_number INTEGER,
   next_episode_number INTEGER,
+  next_episode_title TEXT,
   last_checked INTEGER DEFAULT 0
 );
 

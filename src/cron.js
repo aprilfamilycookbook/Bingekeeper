@@ -13,12 +13,12 @@ export async function handleCron(env) {
 }
 
 async function getUpcomingNotifications(env) {
-  const baseQuery = `SELECT w.user_id, w.show_id, u.email, u.name, u.notify_email, s.name as show_name, s.next_episode_date, s.next_season_number, s.next_episode_number`;
+  const baseQuery = `SELECT w.user_id, w.show_id, u.email, u.name, u.notify_email, s.name as show_name, s.poster_path, s.next_episode_date, s.next_season_number, s.next_episode_number, s.next_episode_title`;
   const joins = ` FROM watchlist w JOIN users u ON w.user_id = u.id JOIN shows s ON w.show_id = s.id WHERE w.notify = 1 AND s.next_episode_date IS NOT NULL AND s.next_episode_date BETWEEN date('now') AND date('now', '+2 days')`;
   try {
     return await env.DB.prepare(`${baseQuery}, COALESCE(w.notify_pref, 'two_days') as notify_pref${joins}`).all();
   } catch {
-    return await env.DB.prepare(`${baseQuery}, 'two_days' as notify_pref${joins}`).all();
+    return await env.DB.prepare(`SELECT w.user_id, w.show_id, u.email, u.name, u.notify_email, s.name as show_name, s.poster_path, s.next_episode_date, s.next_season_number, s.next_episode_number, NULL as next_episode_title, 'two_days' as notify_pref${joins}`).all();
   }
 }
 
@@ -36,9 +36,13 @@ async function checkShowForUpdates(showId, env) {
     const tmdbApiKey = env.TMDB_API_KEY || env['TMDB_API_KEY '];
     const res = await fetch(`https://api.themoviedb.org/3/tv/${showId}?api_key=${tmdbApiKey}&language=en-US`);
     const data = await res.json();
-    let nextDate = null, nextSeason = null, nextEpisode = null;
-    if (data.next_episode_to_air) { nextDate = data.next_episode_to_air.air_date; nextSeason = data.next_episode_to_air.season_number; nextEpisode = data.next_episode_to_air.episode_number; }
-    await env.DB.prepare(`UPDATE shows SET next_episode_date=?, next_season_number=?, next_episode_number=?, last_checked=? WHERE id=?`).bind(nextDate, nextSeason, nextEpisode, Math.floor(Date.now() / 1000), showId).run();
+    let nextDate = null, nextSeason = null, nextEpisode = null, nextTitle = null;
+    if (data.next_episode_to_air) { nextDate = data.next_episode_to_air.air_date; nextSeason = data.next_episode_to_air.season_number; nextEpisode = data.next_episode_to_air.episode_number; nextTitle = data.next_episode_to_air.name || null; }
+    try {
+      await env.DB.prepare(`UPDATE shows SET next_episode_date=?, next_season_number=?, next_episode_number=?, next_episode_title=?, last_checked=? WHERE id=?`).bind(nextDate, nextSeason, nextEpisode, nextTitle, Math.floor(Date.now() / 1000), showId).run();
+    } catch {
+      await env.DB.prepare(`UPDATE shows SET next_episode_date=?, next_season_number=?, next_episode_number=?, last_checked=? WHERE id=?`).bind(nextDate, nextSeason, nextEpisode, Math.floor(Date.now() / 1000), showId).run();
+    }
   } catch (e) { console.error(`Failed to check show ${showId}:`, e); }
 }
 
@@ -54,24 +58,114 @@ async function sendReleaseNotification(env, item) {
   await sendEmailNotification(env, item, message);
 }
 
-function releaseMessage(item) {
+export function releaseMessage(item) {
   const isNewSeason = item.next_episode_number === 1;
-  const days = daysUntil(item.next_episode_date);
-  const when = days === 0 ? 'today' : days === 1 ? 'tomorrow' : 'soon';
-  const episodeLabel = isNewSeason ? `Season ${item.next_season_number} premiere` : `S${item.next_season_number}E${item.next_episode_number}`;
-  const subject = isNewSeason ? `New season of ${item.show_name} starts ${when}!` : `New episode of ${item.show_name} ${when}!`;
+  const episodeLabel = isNewSeason ? `Season ${item.next_season_number} premiere` : `Season ${item.next_season_number}, Episode ${item.next_episode_number}`;
+  const subject = isNewSeason ? `New season of ${item.show_name} starts soon!` : `New episode of ${item.show_name} soon!`;
+  const airDate = formatLongDate(item.next_episode_date);
   return {
     subject,
     episodeLabel,
-    body: `${episodeLabel} airs ${item.next_episode_date}.`
+    airDate,
+    body: `${episodeLabel} airs ${airDate}.`
   };
 }
 
 async function sendEmailNotification(env, item, message) {
   if (!item.notify_email) return;
   if (!env.RESEND_API_KEY) return;
-  const html = `<div style="font-family:-apple-system,sans-serif;max-width:500px;margin:0 auto;padding:24px"><h1 style="color:#378ADD">Bingekeeper</h1><h2>Hey ${item.name}!</h2><p style="font-size:16px"><strong>${item.show_name}</strong> has a new episode coming up:</p><div style="background:#f0f0f0;border-radius:12px;padding:16px;text-align:center"><div style="font-size:20px;font-weight:600">${message.episodeLabel}</div><div style="color:#666">Airs ${item.next_episode_date}</div></div><a href="https://bingekeeper.tv" style="color:#378ADD">Manage your watchlist</a></div>`;
+  const html = notificationEmailHtml(item, message);
   await fetch('https://api.resend.com/emails', { method: 'POST', headers: { 'Authorization': `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: 'Bingekeeper <hello@bingekeeper.tv>', to: item.email, subject: message.subject, html }) });
+}
+
+export function notificationEmailHtml(item, message) {
+  const showName = escapeHtml(item.show_name);
+  const userName = escapeHtml(item.name || 'there');
+  const episodeTitle = item.next_episode_title ? escapeHtml(item.next_episode_title) : '';
+  const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w342${item.poster_path}` : '';
+  const manageUrl = 'https://bingekeeper.tv/';
+  const preferencesUrl = 'https://bingekeeper.tv/';
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${escapeHtml(message.subject)}</title>
+  </head>
+  <body style="margin:0;padding:0;background:#0f0f13;color:#f0f0f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0f0f13;margin:0;padding:24px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;max-width:560px;background:#1a1a22;border:1px solid rgba(255,255,255,0.10);border-radius:14px;overflow:hidden;">
+            <tr>
+              <td style="padding:22px 22px 10px;">
+                <div style="font-size:24px;line-height:1.1;font-weight:800;color:#ffffff;">Binge<span style="color:#8b85ff;">Keeper</span></div>
+                <div style="margin-top:8px;color:#33d6c7;font-size:12px;font-weight:700;text-transform:uppercase;">Release reminder</div>
+              </td>
+            </tr>
+            ${posterUrl ? `<tr><td style="padding:8px 22px 0;"><img src="${posterUrl}" alt="${showName} poster" width="160" style="display:block;width:160px;max-width:42%;height:auto;border-radius:10px;border:1px solid rgba(255,255,255,0.12);"></td></tr>` : ''}
+            <tr>
+              <td style="padding:18px 22px 8px;">
+                <h1 style="margin:0 0 10px;font-size:28px;line-height:1.15;color:#ffffff;">${showName}</h1>
+                <p style="margin:0;color:#b9b8d4;font-size:16px;line-height:1.55;">Hi ${userName}, a show you track has a release coming up.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:10px 22px 18px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#242430;border:1px solid rgba(108,99,255,0.35);border-radius:12px;">
+                  <tr>
+                    <td style="padding:18px;text-align:left;">
+                      <div style="color:#8b85ff;font-size:13px;font-weight:700;text-transform:uppercase;">Next release</div>
+                      <div style="margin-top:6px;color:#ffffff;font-size:22px;line-height:1.25;font-weight:800;">${escapeHtml(message.episodeLabel)}</div>
+                      ${episodeTitle ? `<div style="margin-top:6px;color:#f0f0f0;font-size:16px;line-height:1.4;">${episodeTitle}</div>` : ''}
+                      <div style="margin-top:10px;color:#b9b8d4;font-size:15px;line-height:1.4;">Airs ${escapeHtml(message.airDate)}</div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 22px 22px;">
+                <table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;">
+                  <tr>
+                    <td style="padding:0 0 10px;">
+                      <a href="${manageUrl}" style="display:block;background:#6c63ff;color:#ffffff;text-decoration:none;text-align:center;border-radius:9px;padding:13px 16px;font-size:15px;font-weight:700;">Manage watchlist</a>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <a href="${preferencesUrl}" style="display:block;color:#8b85ff;text-decoration:none;text-align:center;border-radius:9px;padding:10px 16px;font-size:14px;font-weight:700;">Manage notification preferences</a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:16px 22px 22px;border-top:1px solid rgba(255,255,255,0.08);">
+                <p style="margin:0;color:#9999aa;font-size:12px;line-height:1.5;">You're receiving this because you track ${showName} on BingeKeeper.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+}
+
+function formatLongDate(date) {
+  return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC'
+  });
+}
+
+function escapeHtml(value) {
+  return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function daysUntil(date) {
