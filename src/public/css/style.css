@@ -813,6 +813,41 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.5rem; }
   gap: 8px;
   flex-wrap: wrap;
 }
+.referral-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 1.4rem;
+  padding: 18px 20px;
+  border: 1px solid rgba(139,133,255,0.28);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(139,133,255,0.13), rgba(246,195,91,0.08)), var(--bg2);
+}
+.referral-card h2 {
+  font-size: 18px;
+}
+.referral-card p:not(.eyebrow) {
+  color: var(--text2);
+  font-size: 14px;
+  max-width: 650px;
+}
+.referral-actions {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 8px;
+  min-width: min(100%, 470px);
+}
+.referral-actions input {
+  min-width: 0;
+  padding: 11px 12px;
+  background: rgba(15,15,19,0.55);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text2);
+  font-size: 13px;
+  outline: none;
+}
 .stat-card {
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1508,7 +1543,10 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); c
   .header-right { gap: 7px; }
   .header-name { display: none; }
   .plus-banner,
-  .push-settings { align-items: stretch; flex-direction: column; }
+  .push-settings,
+  .referral-card { align-items: stretch; flex-direction: column; }
+  .referral-actions { grid-template-columns: 1fr; min-width: 0; }
+  .referral-actions .btn-secondary { width: 100%; }
   .push-actions { justify-content: stretch; }
   .push-actions .btn-primary,
   .push-actions .btn-secondary,

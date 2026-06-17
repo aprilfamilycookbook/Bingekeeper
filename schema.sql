@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS users (
   notify_email INTEGER DEFAULT 1,
   is_admin INTEGER DEFAULT 0,
   plan TEXT DEFAULT 'free',
+  referral_code TEXT UNIQUE,
+  referral_bonus_slots INTEGER DEFAULT 0,
   stripe_customer_id TEXT,
   stripe_subscription_id TEXT,
   subscription_status TEXT,
@@ -51,6 +53,19 @@ CREATE TABLE IF NOT EXISTS recommendation_cache (
   payload TEXT NOT NULL,
   updated_at INTEGER DEFAULT (unixepoch()),
   PRIMARY KEY (source_show_id, cache_key)
+);
+
+-- Referral credits for extra free show slots
+CREATE TABLE IF NOT EXISTS referrals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  referrer_user_id INTEGER NOT NULL,
+  referred_user_id INTEGER NOT NULL,
+  status TEXT DEFAULT 'pending',
+  awarded_at INTEGER,
+  created_at INTEGER DEFAULT (unixepoch()),
+  FOREIGN KEY (referrer_user_id) REFERENCES users(id),
+  FOREIGN KEY (referred_user_id) REFERENCES users(id),
+  UNIQUE(referred_user_id)
 );
 
 -- Shows table (cached TMDB data)

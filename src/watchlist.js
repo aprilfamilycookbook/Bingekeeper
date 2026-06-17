@@ -1,4 +1,4 @@
-import { verifyJWT } from './auth.js';
+import { awardReferralBonusIfEligible, getFreeShowLimitForUser, verifyJWT } from './auth.js';
 import { warmRecommendationCache } from './search.js';
 
 function jsonResponse(data, status = 200) {
@@ -29,10 +29,10 @@ export async function handleWatchlist(request, env, path, ctx) {
     const { show_id, name, poster_path, overview, first_air_date, status, service, current_season, current_episode, notify, notify_pref } = await request.json();
     const preference = normalizeNotifyPref(notify_pref, notify);
     if (!show_id || !name) return jsonResponse({ error: 'show_id and name required' }, 400);
-    const account = await env.DB.prepare('SELECT plan FROM users WHERE id = ?').bind(user.userId).first();
-    if ((account?.plan || 'free') !== 'plus') {
+    const quota = await getFreeShowLimitForUser(env, user.userId);
+    if (!quota.isPlus) {
       const count = await env.DB.prepare('SELECT COUNT(*) as total FROM watchlist WHERE user_id = ?').bind(user.userId).first();
-      if ((count?.total || 0) >= 10) return jsonResponse({ error: 'Free accounts can track up to 10 shows. Upgrade to Plus for unlimited tracking.' }, 402);
+      if ((count?.total || 0) >= quota.limit) return jsonResponse({ error: `Free accounts can track up to ${quota.limit} shows. Invite friends for up to 25 free show slots or upgrade to Plus for unlimited tracking.` }, 402);
     }
     await env.DB.prepare(`INSERT INTO shows (id, name, poster_path, overview, first_air_date) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, poster_path=excluded.poster_path`).bind(show_id, name, poster_path || null, overview || null, first_air_date || null).run();
     try {
@@ -52,6 +52,7 @@ export async function handleWatchlist(request, env, path, ctx) {
         }
       }
     }
+    await awardReferralBonusIfEligible(env, user.userId);
     if (ctx?.waitUntil) ctx.waitUntil(warmRecommendationCache(env, show_id, name));
     return jsonResponse({ message: 'Added to watchlist' });
   }

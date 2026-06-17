@@ -21,6 +21,12 @@ function generateToken() {
   return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+function generateReferralCode() {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map(b => b.toString(36).padStart(2, '0')).join('').slice(0, 10);
+}
+
 const OAUTH_PROVIDERS = {
   google: {
     authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -34,6 +40,9 @@ const OAUTH_PROVIDERS = {
 };
 
 const TURNSTILE_SITE_KEY = '0x4AAAAAADlYKalja0cX172h';
+const FREE_SHOW_BASE_LIMIT = 10;
+const FREE_SHOW_REFERRAL_CAP = 25;
+const REFERRAL_BONUS_SLOTS = 5;
 
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -126,7 +135,7 @@ export async function handleAuth(request, env, path) {
     if (!tokenUser) return jsonResponse({ error: 'Unauthorized' }, 401);
     const user = await getUserById(env, tokenUser.userId);
     if (!user) return jsonResponse({ error: 'User not found' }, 404);
-    return jsonResponse({ user: publicUser(user, env) });
+    return jsonResponse({ user: await buildPublicUser(env, user) });
   }
 
   if (path === '/api/auth/account' && request.method === 'DELETE') {
@@ -142,7 +151,7 @@ export async function handleAuth(request, env, path) {
   }
 
   if (path === '/api/auth/register' && request.method === 'POST') {
-    const { email, password, name, turnstileToken } = body;
+    const { email, password, name, turnstileToken, referralCode } = body;
     if (!email || !password || !name) return jsonResponse({ error: 'All fields required' }, 400);
     if (password.length < 8) return jsonResponse({ error: 'Password must be at least 8 characters' }, 400);
     const turnstile = await verifyTurnstile(env, turnstileToken, request, 'register');
@@ -151,7 +160,10 @@ export async function handleAuth(request, env, path) {
     if (existing) return jsonResponse({ error: 'Email already registered' }, 409);
     const hash = await hashPassword(password);
     const token = generateToken();
-    await env.DB.prepare('INSERT INTO users (email, password_hash, name, verify_token) VALUES (?, ?, ?, ?)').bind(email.toLowerCase(), hash, name, token).run();
+    const newReferralCode = await uniqueReferralCode(env);
+    await env.DB.prepare('INSERT INTO users (email, password_hash, name, verify_token, referral_code) VALUES (?, ?, ?, ?, ?)').bind(email.toLowerCase(), hash, name, token, newReferralCode).run();
+    const created = await env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email.toLowerCase()).first();
+    if (created?.id) await recordReferral(env, referralCode, created.id);
     const verifyUrl = `https://bingekeeper.tv/#verify?token=${token}`;
     await sendEmail(env, email, 'Verify your Bingekeeper account', `<h2>Welcome to Bingekeeper, ${name}!</h2><p>Click below to verify your email:</p><a href="${verifyUrl}" style="background:#378ADD;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block">Verify Email</a>`);
     return jsonResponse({ message: 'Account created! Check your email to verify.' });
@@ -166,7 +178,7 @@ export async function handleAuth(request, env, path) {
     if (hash !== user.password_hash) return jsonResponse({ error: 'Invalid email or password' }, 401);
     if (!user.verified) return jsonResponse({ error: 'Please verify your email first. Check your inbox.' }, 403);
     const jwt = await createJWT(user.id, user.email, env.JWT_SECRET);
-    return jsonResponse({ token: jwt, user: publicUser(user, env) });
+    return jsonResponse({ token: jwt, user: await buildPublicUser(env, user) });
   }
 
   if (path === '/api/auth/verify' && request.method === 'POST') {
@@ -213,9 +225,10 @@ async function startOAuth(request, env, providerName) {
   if (!clientId || !env[provider.clientSecretEnv]) return redirectOAuthError('Google login is not configured yet.', url.origin);
 
   const returnTo = safeReturnTo(url.searchParams.get('returnTo'));
+  const referralCode = normalizeReferralCode(url.searchParams.get('ref'));
   const redirectUri = new URL(`/auth/${providerName}/callback`, url.origin).toString();
   const nonce = generateToken();
-  const state = await createOAuthState({ provider: providerName, returnTo, nonce, ts: Date.now() }, env.JWT_SECRET);
+  const state = await createOAuthState({ provider: providerName, returnTo, nonce, referralCode, ts: Date.now() }, env.JWT_SECRET);
   const authUrl = new URL(provider.authUrl);
   authUrl.searchParams.set('client_id', clientId);
   authUrl.searchParams.set('redirect_uri', redirectUri);
@@ -266,10 +279,11 @@ async function finishOAuth(request, env, providerName) {
       provider: providerName,
       providerUserId: profile.sub,
       email: String(profile.email).toLowerCase(),
-      name: profile.name || profile.given_name || String(profile.email).split('@')[0]
+      name: profile.name || profile.given_name || String(profile.email).split('@')[0],
+      referralCode: state.referralCode
     });
     const jwt = await createJWT(user.id, user.email, env.JWT_SECRET);
-    return oauthSuccessPage(jwt, publicUser(user, env), state.returnTo);
+    return oauthSuccessPage(jwt, await buildPublicUser(env, user), state.returnTo);
   } catch {
     return redirectOAuthError('Google login failed. Please try again.', url.origin);
   }
@@ -348,14 +362,19 @@ async function findOrCreateOAuthUser(env, profile) {
   }
 
   let user = await env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(profile.email).first();
+  let createdUser = false;
   if (!user) {
     const passwordHash = await hashPassword(`oauth:${profile.provider}:${profile.providerUserId}:${generateToken()}`);
-    await env.DB.prepare('INSERT INTO users (email, password_hash, name, verified) VALUES (?, ?, ?, 1)').bind(profile.email, passwordHash, profile.name).run();
+    const referralCode = await uniqueReferralCode(env);
+    await env.DB.prepare('INSERT INTO users (email, password_hash, name, verified, referral_code) VALUES (?, ?, ?, 1, ?)').bind(profile.email, passwordHash, profile.name, referralCode).run();
     user = await env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(profile.email).first();
+    createdUser = true;
   } else if (!user.verified) {
     await env.DB.prepare('UPDATE users SET verified = 1, verify_token = NULL WHERE id = ?').bind(user.id).run();
     user = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(user.id).first();
   }
+
+  if (createdUser) await recordReferral(env, profile.referralCode, user.id);
 
   await env.DB.prepare(`
     INSERT INTO oauth_accounts (user_id, provider, provider_user_id, email)
@@ -370,6 +389,7 @@ function oauthSuccessPage(token, user, returnTo) {
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Signing in...</title></head><body><script>
 localStorage.setItem('bk_token', ${JSON.stringify(token)});
 localStorage.setItem('bk_user', ${JSON.stringify(JSON.stringify(user))});
+localStorage.removeItem('bk_referral_code');
 window.location.replace(${JSON.stringify(target)});
 </script></body></html>`;
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
@@ -396,10 +416,26 @@ async function sendEmail(env, to, subject, html) {
 
 async function getUserById(env, userId) {
   try {
-    return await env.DB.prepare('SELECT id, email, name, plan, subscription_status, is_admin FROM users WHERE id = ?').bind(userId).first();
+    return await env.DB.prepare('SELECT id, email, name, plan, subscription_status, is_admin, referral_code, referral_bonus_slots FROM users WHERE id = ?').bind(userId).first();
   } catch {
     return await env.DB.prepare('SELECT id, email, name, plan, subscription_status FROM users WHERE id = ?').bind(userId).first();
   }
+}
+
+async function buildPublicUser(env, user) {
+  const referralCode = await ensureReferralCode(env, user);
+  const bonusSlots = Math.max(0, Number(user.referral_bonus_slots || 0));
+  const freeShowLimit = Math.min(FREE_SHOW_REFERRAL_CAP, FREE_SHOW_BASE_LIMIT + bonusSlots);
+  return {
+    ...publicUser(user, env),
+    referral_code: referralCode,
+    referral_url: `https://bingekeeper.tv/?ref=${encodeURIComponent(referralCode)}`,
+    referral_bonus_slots: bonusSlots,
+    free_show_limit: freeShowLimit,
+    free_show_base_limit: FREE_SHOW_BASE_LIMIT,
+    free_show_referral_cap: FREE_SHOW_REFERRAL_CAP,
+    referral_bonus_increment: REFERRAL_BONUS_SLOTS
+  };
 }
 
 function publicUser(user, env) {
@@ -416,4 +452,75 @@ function publicUser(user, env) {
     subscription_status: user.subscription_status || null,
     is_admin: Boolean(user.is_admin) || adminEmails.includes(String(user.email).toLowerCase())
   };
+}
+
+async function ensureReferralCode(env, user) {
+  if (user.referral_code) return user.referral_code;
+  const code = await uniqueReferralCode(env);
+  try {
+    await env.DB.prepare('UPDATE users SET referral_code = ? WHERE id = ? AND referral_code IS NULL').bind(code, user.id).run();
+    user.referral_code = code;
+    return code;
+  } catch {
+    const fresh = await env.DB.prepare('SELECT referral_code FROM users WHERE id = ?').bind(user.id).first();
+    if (fresh?.referral_code) return fresh.referral_code;
+    const retryCode = await uniqueReferralCode(env);
+    await env.DB.prepare('UPDATE users SET referral_code = ? WHERE id = ?').bind(retryCode, user.id).run();
+    user.referral_code = retryCode;
+    return retryCode;
+  }
+}
+
+async function uniqueReferralCode(env) {
+  for (let i = 0; i < 5; i++) {
+    const code = generateReferralCode();
+    const existing = await env.DB.prepare('SELECT id FROM users WHERE referral_code = ?').bind(code).first();
+    if (!existing) return code;
+  }
+  return generateToken().slice(0, 12);
+}
+
+function normalizeReferralCode(value) {
+  return String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32);
+}
+
+async function recordReferral(env, referralCode, referredUserId) {
+  const code = normalizeReferralCode(referralCode);
+  if (!code) return;
+  try {
+    const referrer = await env.DB.prepare('SELECT id FROM users WHERE referral_code = ?').bind(code).first();
+    if (!referrer || referrer.id === referredUserId) return;
+    await env.DB.prepare('INSERT OR IGNORE INTO referrals (referrer_user_id, referred_user_id) VALUES (?, ?)').bind(referrer.id, referredUserId).run();
+  } catch {}
+}
+
+export async function getFreeShowLimitForUser(env, userId) {
+  try {
+    const user = await env.DB.prepare('SELECT plan, referral_bonus_slots FROM users WHERE id = ?').bind(userId).first();
+    if ((user?.plan || 'free') === 'plus') return { isPlus: true, limit: null };
+    const bonusSlots = Math.max(0, Number(user?.referral_bonus_slots || 0));
+    return { isPlus: false, limit: Math.min(FREE_SHOW_REFERRAL_CAP, FREE_SHOW_BASE_LIMIT + bonusSlots) };
+  } catch {
+    return { isPlus: false, limit: FREE_SHOW_BASE_LIMIT };
+  }
+}
+
+export async function awardReferralBonusIfEligible(env, referredUserId) {
+  try {
+    const referral = await env.DB.prepare(`
+      SELECT id, referrer_user_id, referred_user_id
+      FROM referrals
+      WHERE referred_user_id = ? AND status = 'pending'
+    `).bind(referredUserId).first();
+    if (!referral) return;
+
+    const firstShow = await env.DB.prepare('SELECT COUNT(*) AS total FROM watchlist WHERE user_id = ?').bind(referredUserId).first();
+    if ((firstShow?.total || 0) < 1) return;
+
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE users SET referral_bonus_slots = MIN(?, COALESCE(referral_bonus_slots, 0) + ?) WHERE id = ?`).bind(FREE_SHOW_REFERRAL_CAP - FREE_SHOW_BASE_LIMIT, REFERRAL_BONUS_SLOTS, referral.referrer_user_id),
+      env.DB.prepare(`UPDATE users SET referral_bonus_slots = MIN(?, COALESCE(referral_bonus_slots, 0) + ?) WHERE id = ?`).bind(FREE_SHOW_REFERRAL_CAP - FREE_SHOW_BASE_LIMIT, REFERRAL_BONUS_SLOTS, referral.referred_user_id),
+      env.DB.prepare(`UPDATE referrals SET status = 'awarded', awarded_at = unixepoch() WHERE id = ? AND status = 'pending'`).bind(referral.id)
+    ]);
+  } catch {}
 }

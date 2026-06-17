@@ -62,7 +62,7 @@
           </div>
           <div class="trust-row">
             <span>No credit card required</span>
-            <span>Free accounts track up to 10 shows</span>
+            <span>Free accounts start with 10 shows</span>
             <span>Secure billing through Stripe</span>
           </div>
         </div>
@@ -146,7 +146,7 @@
         <div>
           <p class="eyebrow">Free to start</p>
           <h2>Free accounts can track up to 10 shows.</h2>
-          <p>Plus features may be added later as BingeKeeper grows, but the free plan is enough to build a real starter watchlist today.</p>
+          <p>Invite friends to earn 5 extra free show slots per successful referral, up to 25 total. Plus is available when you want unlimited tracking.</p>
         </div>
         <button class="btn-primary" onclick="showRegister()">Start Tracking Free</button>
       </section>
@@ -214,6 +214,17 @@
           <p id="pushSettingsCopy">Turn on browser notifications to get release alerts when BingeKeeper finds new episodes or seasons.</p>
         </div>
         <div class="push-actions" id="pushSettingsActions"></div>
+      </section>
+      <section class="referral-card hidden" id="referralSection">
+        <div>
+          <p class="eyebrow">Invite friends</p>
+          <h2>Get 5 extra free show slots</h2>
+          <p id="referralCopy">Share your invite link. When a friend joins and adds their first show, you both get 5 extra slots, up to 25 free shows.</p>
+        </div>
+        <div class="referral-actions">
+          <input type="text" id="referralLink" readonly aria-label="Referral link">
+          <button class="btn-secondary" onclick="copyReferralLink()">Copy link</button>
+        </div>
       </section>
       <section class="upcoming-section hidden" id="upcomingSection">
         <div class="section-heading">

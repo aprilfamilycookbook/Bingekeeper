@@ -8,7 +8,7 @@ const PUBLIC_PAGES = {
   plus: {
     title: 'Bingekeeper Plus',
     eyebrow: 'Pricing',
-    body: `<p>Track the shows you care about, remember where you watch them, and get a clean view of upcoming episodes.</p><div class="pricing-grid"><div><h3>Free</h3><strong>$0</strong><p>Track up to 10 shows, including status, streaming service, season, episode, and upcoming episode details.</p></div><div class="featured"><h3>Plus</h3><strong>Monthly</strong><p>Unlimited show tracking and self-service billing through Stripe. The final price is shown securely at checkout.</p><button class="btn-primary" onclick="openBillingFromPublic()">Upgrade to Plus</button></div></div>`
+    body: `<p>Track the shows you care about, remember where you watch them, and get a clean view of upcoming episodes.</p><div class="pricing-grid"><div><h3>Free</h3><strong>$0</strong><p>Track up to 10 shows to start. Invite friends to earn 5 extra free show slots per successful referral, up to 25 total.</p></div><div class="featured"><h3>Plus</h3><strong>Monthly</strong><p>Unlimited show tracking and self-service billing through Stripe. The final price is shown securely at checkout.</p><button class="btn-primary" onclick="openBillingFromPublic()">Upgrade to Plus</button></div></div>`
   },
   support: {
     title: 'Support',
@@ -23,7 +23,7 @@ const PUBLIC_PAGES = {
   terms: {
     title: 'Terms of Service',
     eyebrow: 'Effective June 12, 2026',
-    body: `<p>Bingekeeper is provided as a show-tracking tool. You are responsible for keeping your login information secure and for using the service lawfully.</p><p>Plus subscriptions are billed through Stripe and can be managed from the app. Free accounts may be limited to 10 tracked shows.</p><p>Bingekeeper depends on third-party services for payments, email, hosting, and show metadata. The service may change as those services or the product evolve.</p>`
+    body: `<p>Bingekeeper is provided as a show-tracking tool. You are responsible for keeping your login information secure and for using the service lawfully.</p><p>Plus subscriptions are billed through Stripe and can be managed from the app. Free accounts start at 10 tracked shows and may earn referral bonuses up to 25 tracked shows.</p><p>Bingekeeper depends on third-party services for payments, email, hosting, and show metadata. The service may change as those services or the product evolve.</p>`
   }
 };
 
@@ -59,6 +59,7 @@ window.addEventListener('appinstalled', () => {
 
 window.addEventListener('DOMContentLoaded', async () => {
   registerServiceWorker();
+  captureReferralCode();
   await loadAuthConfig();
   const route = getAuthRoute();
   const billingResult = window.location.hash;
@@ -110,7 +111,13 @@ function scrollToHowItWorks() {
 }
 function startGoogleLogin() {
   const returnTo = window.location.pathname === '/admin/social' ? '/admin/social' : '/';
-  window.location.href = `/auth/google/start?returnTo=${encodeURIComponent(returnTo)}`;
+  const ref = localStorage.getItem('bk_referral_code') || '';
+  window.location.href = `/auth/google/start?returnTo=${encodeURIComponent(returnTo)}${ref ? `&ref=${encodeURIComponent(ref)}` : ''}`;
+}
+function captureReferralCode() {
+  const params = new URLSearchParams(window.location.search);
+  const ref = normalizeReferralCode(params.get('ref'));
+  if (ref) localStorage.setItem('bk_referral_code', ref);
 }
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
@@ -360,9 +367,11 @@ async function doRegister() {
   const turnstileToken = getTurnstileToken('register');
   if (!turnstileToken) { showError(errEl, 'Please complete the security check before creating your account.'); return; }
   const btn = event.target; btn.disabled = true; btn.textContent = 'Creating account...';
-  const res = await api('/api/auth/register', 'POST', { name, email, password, turnstileToken });
+  const referralCode = localStorage.getItem('bk_referral_code') || '';
+  const res = await api('/api/auth/register', 'POST', { name, email, password, turnstileToken, referralCode });
   btn.disabled = false; btn.textContent = 'Create account';
   if (res.error) { resetTurnstile('register'); showError(errEl, res.error); return; }
+  localStorage.removeItem('bk_referral_code');
   successEl.textContent = res.message; successEl.classList.remove('hidden');
   resetTurnstile('register');
 }
@@ -544,7 +553,10 @@ function renderDashboard() {
   const watching = watchlist.filter(s => s.status === 'Watching').length;
   const upcoming = watchlist.filter(s => s.next_episode_date && s.next_episode_date >= todayString()).sort((a,b) => a.next_episode_date.localeCompare(b.next_episode_date));
   const isPlus = currentUser?.plan === 'plus';
-  document.getElementById('plusBanner').classList.toggle('hidden', isPlus || watchlist.length < 8);
+  const freeLimit = currentUser?.free_show_limit || 10;
+  document.getElementById('plusBanner').classList.toggle('hidden', isPlus || watchlist.length < Math.max(1, freeLimit - 2));
+  document.querySelector('#plusBanner p:not(.eyebrow)').textContent = `Free accounts can track ${freeLimit} shows${freeLimit < 25 ? ', with referral bonuses up to 25' : ''}. Upgrade when your queue gets serious.`;
+  renderReferralCard();
   document.getElementById('dashboardGreeting').textContent = watchlist.length ? `Welcome back, ${currentUser.name}` : 'Start your watchlist';
   document.getElementById('dashboardSubcopy').textContent = watchlist.length ? `${watching} ${plural(watching, 'show')} in progress. ${upcoming.length} upcoming ${plural(upcoming.length, 'episode')} on the radar.` : 'Add a few shows and this page becomes your personal release calendar.';
   document.getElementById('statsGrid').innerHTML = [
@@ -558,6 +570,19 @@ function renderDashboard() {
   if (!upcoming.length) { section.classList.add('hidden'); list.innerHTML = ''; return; }
   section.classList.remove('hidden');
   list.innerHTML = upcoming.slice(0, 4).map(s => `<div class="upcoming-item">${s.poster_path?`<img src="https://image.tmdb.org/t/p/w92${s.poster_path}" alt="${esc(s.name)}">`:`<div class="upcoming-poster">TV</div>`}<div><strong>${esc(s.name)}</strong><span>${daysUntilLabel(s.next_episode_date)} - S${s.next_season_number || '?'}E${s.next_episode_number || '?'}</span></div></div>`).join('');
+}
+function renderReferralCard() {
+  const section = document.getElementById('referralSection');
+  if (!section || !currentUser) return;
+  const isPlus = currentUser.plan === 'plus';
+  const limit = currentUser.free_show_limit || 10;
+  const cap = currentUser.free_show_referral_cap || 25;
+  const link = currentUser.referral_url || `https://bingekeeper.tv/?ref=${encodeURIComponent(currentUser.referral_code || '')}`;
+  section.classList.toggle('hidden', isPlus || !currentUser.referral_code);
+  const input = document.getElementById('referralLink');
+  if (input) input.value = link;
+  const copy = document.getElementById('referralCopy');
+  if (copy) copy.textContent = `You can track ${limit} free ${plural(limit, 'show')}. Share your invite link. When a friend joins and adds their first show, you both get 5 extra slots, up to ${cap} free shows.`;
 }
 async function loadDashboardRecommendations() {
   const loadToken = ++recommendationLoadToken;
@@ -673,6 +698,11 @@ function syncBillingUi() {
   document.getElementById('planBadge').textContent = isPlus ? 'Plus' : 'Free';
   document.getElementById('planBadge').classList.toggle('is-plus', isPlus);
   document.getElementById('billingBtn').textContent = isPlus ? 'Manage Plus' : 'Upgrade';
+}
+async function copyReferralLink() {
+  const link = document.getElementById('referralLink')?.value || currentUser?.referral_url;
+  if (!link) { toast('Referral link is not ready yet.'); return; }
+  await copyText(link, 'Referral link copied.');
 }
 function syncAdminUi() {
   document.getElementById('adminSocialBtn').classList.toggle('hidden', !currentUser?.is_admin);
@@ -887,6 +917,9 @@ function notifyOptionsHtml(selected) {
 function normalizeNotifyPref(pref, notify) {
   if (notify === false || notify === 0) return 'none';
   return NOTIFY_OPTIONS.some(([value]) => value === pref) ? pref : 'two_days';
+}
+function normalizeReferralCode(value) {
+  return String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32);
 }
 function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(window._toastTimer); window._toastTimer = setTimeout(() => t.classList.add('hidden'), 2800); }
 function showError(el, msg) { el.textContent = msg; el.classList.remove('hidden'); }
