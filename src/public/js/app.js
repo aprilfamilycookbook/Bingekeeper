@@ -13,7 +13,7 @@ const PUBLIC_PAGES = {
   support: {
     title: 'Support',
     eyebrow: 'Help',
-    body: `<p>Need help with your account, billing, email verification, or show tracking? Email <a href="mailto:hello@bingekeeper.tv">hello@bingekeeper.tv</a>.</p><p>A dedicated customer service number can be added here once your business phone line is active.</p>`
+    body: `<p>Need help with your account, billing, email verification, or show tracking? Email <a href="mailto:hello@bingekeeper.tv">hello@bingekeeper.tv</a>.</p><p>BingeKeeper support is currently handled by email so every request can be tracked and answered clearly.</p>`
   },
   privacy: {
     title: 'Privacy Policy',
