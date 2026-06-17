@@ -34,6 +34,7 @@ let searchResults = [];
 let dashboardRecommendations = [];
 let dashboardRecommendationGroups = [];
 let detailRecommendations = [];
+let recommendationLoadToken = 0;
 let pendingAddShow = null;
 let activeTab = 'All';
 let adminSocialData = null;
@@ -559,20 +560,41 @@ function renderDashboard() {
   list.innerHTML = upcoming.slice(0, 4).map(s => `<div class="upcoming-item">${s.poster_path?`<img src="https://image.tmdb.org/t/p/w92${s.poster_path}" alt="${esc(s.name)}">`:`<div class="upcoming-poster">TV</div>`}<div><strong>${esc(s.name)}</strong><span>${daysUntilLabel(s.next_episode_date)} - S${s.next_season_number || '?'}E${s.next_episode_number || '?'}</span></div></div>`).join('');
 }
 async function loadDashboardRecommendations() {
+  const loadToken = ++recommendationLoadToken;
   const section = document.getElementById('dashboardRecommendationsSection');
   const grid = document.getElementById('dashboardRecommendations');
   if (!watchlist.length) { dashboardRecommendations = []; dashboardRecommendationGroups = []; section.classList.add('hidden'); grid.innerHTML = ''; return; }
+  const cacheKey = dashboardRecommendationCacheKey();
+  const cachedGroups = readDashboardRecommendationCache(cacheKey);
+  if (cachedGroups?.length) {
+    dashboardRecommendationGroups = cachedGroups;
+    dashboardRecommendations = cachedGroups.flatMap(group => group.recommendations);
+    section.classList.remove('hidden');
+    grid.innerHTML = renderRecommendationGroups(cachedGroups);
+  } else {
+    dashboardRecommendations = [];
+    dashboardRecommendationGroups = [];
+    section.classList.remove('hidden');
+    grid.innerHTML = renderRecommendationSkeletonGroups(watchlist.slice(0, 3));
+  }
+
   const res = await api('/api/recommendations/dashboard', 'GET');
+  if (loadToken !== recommendationLoadToken) return;
   const groups = (res.groups || []).filter(group => group.recommendations?.length);
-  if (res.error || !groups.length) { dashboardRecommendations = []; dashboardRecommendationGroups = []; section.classList.add('hidden'); grid.innerHTML = ''; return; }
+  if (res.error || !groups.length) {
+    if (!cachedGroups?.length) { dashboardRecommendations = []; dashboardRecommendationGroups = []; section.classList.add('hidden'); grid.innerHTML = ''; }
+    return;
+  }
   dashboardRecommendationGroups = groups;
   dashboardRecommendations = groups.flatMap(group => group.recommendations);
   section.classList.remove('hidden');
   grid.innerHTML = renderRecommendationGroups(groups);
+  writeDashboardRecommendationCache(cacheKey, groups);
 }
 async function loadShowRecommendations(showId) {
   const grid = document.getElementById('detailRecommendations');
   if (!grid) return;
+  grid.innerHTML = renderRecommendationSkeletonCards(4);
   const res = await api(`/api/recommendations?show_id=${encodeURIComponent(showId)}`, 'GET');
   if (res.error || !res.recommendations?.length) {
     detailRecommendations = [];
@@ -581,6 +603,24 @@ async function loadShowRecommendations(showId) {
   }
   detailRecommendations = res.recommendations.slice(0, 8);
   grid.innerHTML = renderRecommendationCards(detailRecommendations, 'detail');
+}
+function dashboardRecommendationCacheKey() {
+  const ids = watchlist.map(show => Number(show.show_id)).filter(Boolean).sort((a, b) => a - b).join('-');
+  return `bk_dashboard_recommendations:${ids}`;
+}
+function readDashboardRecommendationCache(key) {
+  try {
+    const cached = JSON.parse(localStorage.getItem(key) || 'null');
+    if (!cached?.groups || Date.now() - Number(cached.savedAt || 0) > 6 * 60 * 60 * 1000) return null;
+    return cached.groups;
+  } catch {
+    return null;
+  }
+}
+function writeDashboardRecommendationCache(key, groups) {
+  try {
+    localStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), groups }));
+  } catch {}
 }
 function renderRecommendationCards(items, source) {
   return items.map((show, index) => `<article class="recommendation-card">
@@ -611,6 +651,22 @@ function renderRecommendationGroups(groups) {
       <div class="recommendation-row">${cards}</div>
     </section>`;
   }).join('');
+}
+function renderRecommendationSkeletonGroups(sourceShows) {
+  return sourceShows.map(show => `<section class="recommendation-group">
+    <h3>Because you track ${esc(show.name || 'this show')}</h3>
+    <div class="recommendation-row">${renderRecommendationSkeletonCards(4)}</div>
+  </section>`).join('');
+}
+function renderRecommendationSkeletonCards(count) {
+  return Array.from({ length: count }, () => `<article class="recommendation-card recommendation-skeleton">
+    <div class="recommendation-poster"></div>
+    <div class="recommendation-card-body">
+      <div class="skeleton-line wide"></div>
+      <div class="skeleton-line"></div>
+      <div class="skeleton-button"></div>
+    </div>
+  </article>`).join('');
 }
 function syncBillingUi() {
   const isPlus = currentUser?.plan === 'plus';

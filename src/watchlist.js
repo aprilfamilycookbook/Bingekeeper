@@ -1,4 +1,5 @@
 import { verifyJWT } from './auth.js';
+import { warmRecommendationCache } from './search.js';
 
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
@@ -10,7 +11,7 @@ async function getUser(request, env) {
   return await verifyJWT(auth.slice(7), env.JWT_SECRET);
 }
 
-export async function handleWatchlist(request, env, path) {
+export async function handleWatchlist(request, env, path, ctx) {
   const user = await getUser(request, env);
   if (!user) return jsonResponse({ error: 'Unauthorized' }, 401);
 
@@ -51,6 +52,7 @@ export async function handleWatchlist(request, env, path) {
         }
       }
     }
+    if (ctx?.waitUntil) ctx.waitUntil(warmRecommendationCache(env, show_id, name));
     return jsonResponse({ message: 'Added to watchlist' });
   }
 

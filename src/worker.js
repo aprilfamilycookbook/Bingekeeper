@@ -36,7 +36,7 @@ export default {
     } else if (path.startsWith('/api/push/')) {
       response = await handlePush(request, env, path);
     } else if (path.startsWith('/api/watchlist')) {
-      response = await handleWatchlist(request, env, path);
+      response = await handleWatchlist(request, env, path, ctx);
     } else if (path.startsWith('/api/recommendations')) {
       response = await handleRecommendations(request, env, url, path);
     } else if (path.startsWith('/api/search')) {

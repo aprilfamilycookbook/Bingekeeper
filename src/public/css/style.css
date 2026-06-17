@@ -982,6 +982,39 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.5rem; }
   width: 100%;
 }
 
+.recommendation-skeleton {
+  pointer-events: none;
+}
+
+.recommendation-skeleton .recommendation-poster,
+.skeleton-line,
+.skeleton-button {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(90deg, rgba(255,255,255,0.06), rgba(139,133,255,0.16), rgba(255,255,255,0.06));
+  background-size: 220% 100%;
+  animation: skeleton-shimmer 1.25s linear infinite;
+}
+
+.skeleton-line {
+  height: 12px;
+  border-radius: 999px;
+}
+
+.skeleton-line.wide {
+  width: 86%;
+}
+
+.skeleton-button {
+  height: 28px;
+  border-radius: 999px;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 120% 0; }
+  100% { background-position: -120% 0; }
+}
+
 /* SEARCH */
 .search-section { margin-bottom: 1.6rem; }
 .search-bar { display: flex; gap: 8px; max-width: 680px; }

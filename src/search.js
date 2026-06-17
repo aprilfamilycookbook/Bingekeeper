@@ -1,5 +1,8 @@
 import { verifyJWT } from './auth.js';
 
+const RECOMMENDATION_CACHE_KEY = 'category-aware-v3';
+const RECOMMENDATION_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
+
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 }
@@ -41,7 +44,7 @@ export async function handleRecommendations(request, env, url, path) {
 
     if (path === '/api/recommendations/dashboard') {
       const sourceShows = tracked.slice(0, 6);
-      const groups = await recommendationGroupsForSources(tmdbApiKey, sourceShows, trackedIds, 6);
+      const groups = await recommendationGroupsForSources(env, tmdbApiKey, sourceShows, trackedIds, 6);
       const recommendations = groups.flatMap(group => group.recommendations).slice(0, 12);
       return jsonResponse({ source: 'tmdb', strategy: 'grouped_tracked_show_recommendations', groups, recommendations });
     }
@@ -50,7 +53,7 @@ export async function handleRecommendations(request, env, url, path) {
     if (!showId) return jsonResponse({ error: 'show_id required' }, 400);
     trackedIds.add(showId);
     const sourceShow = tracked.find(show => Number(show.show_id) === showId) || { show_id: showId, name: '' };
-    const recommendations = await recommendationsForSources(tmdbApiKey, [sourceShow], trackedIds, 8);
+    const recommendations = await recommendationsForSources(env, tmdbApiKey, [sourceShow], trackedIds, 8);
     return jsonResponse({ source: 'tmdb', strategy: 'show_recommendations', recommendations });
   } catch {
     return jsonResponse({ error: 'Could not load recommendations' }, 500);
@@ -79,12 +82,19 @@ async function getTrackedShows(env, userId) {
   }
 }
 
-async function recommendationsForSources(apiKey, sourceShows, trackedIds, limit) {
-  const collected = [];
-  for (const source of sourceShows) {
-    if (!source?.show_id) continue;
-    collected.push(...await rawRecommendationsForSource(apiKey, source, trackedIds, limit));
-  }
+export async function warmRecommendationCache(env, showId, sourceName = '') {
+  const tmdbApiKey = env.TMDB_API_KEY || env['TMDB_API_KEY '];
+  if (!tmdbApiKey || !showId) return;
+  await cachedRecommendationsForSource(env, tmdbApiKey, { show_id: showId, name: sourceName }, 16, { forceRefresh: true }).catch(error => {
+    console.error(`Failed to warm recommendations for ${showId}:`, error);
+  });
+}
+
+async function recommendationsForSources(env, apiKey, sourceShows, trackedIds, limit) {
+  const nested = await Promise.all(sourceShows
+    .filter(source => source?.show_id)
+    .map(source => recommendationsForSource(env, apiKey, source, trackedIds, limit)));
+  const collected = nested.flat();
 
   const unique = dedupeRecommendations(collected)
     .sort((a, b) =>
@@ -95,15 +105,20 @@ async function recommendationsForSources(apiKey, sourceShows, trackedIds, limit)
     )
     .slice(0, limit);
 
-  return Promise.all(unique.map(async show => normalizeRecommendation(show, await getProviders(apiKey, show.id))));
+  return unique;
 }
 
-async function recommendationGroupsForSources(apiKey, sourceShows, trackedIds, perSourceLimit) {
+async function recommendationGroupsForSources(env, apiKey, sourceShows, trackedIds, perSourceLimit) {
   const groups = [];
   const usedRecommendationIds = new Set();
-  for (const source of sourceShows) {
-    if (!source?.show_id) continue;
-    const raw = await rawRecommendationsForSource(apiKey, source, trackedIds, perSourceLimit + 4);
+  const perSource = await Promise.all(sourceShows
+    .filter(source => source?.show_id)
+    .map(async source => ({
+      source,
+      raw: await recommendationsForSource(env, apiKey, source, trackedIds, perSourceLimit + 4)
+    })));
+
+  for (const { source, raw } of perSource) {
     const unique = dedupeRecommendations(raw)
       .filter(show => !usedRecommendationIds.has(Number(show.id)))
       .sort((a, b) =>
@@ -116,18 +131,70 @@ async function recommendationGroupsForSources(apiKey, sourceShows, trackedIds, p
     if (!unique.length) continue;
 
     unique.forEach(show => usedRecommendationIds.add(Number(show.id)));
-    const recommendations = await Promise.all(unique.map(async show => normalizeRecommendation(show, await getProviders(apiKey, show.id))));
     groups.push({
       source_show_id: Number(source.show_id),
       source_show_name: source.name || '',
       category: unique[0]?.source_category || '',
-      recommendations
+      recommendations: unique.slice(0, perSourceLimit)
     });
   }
   return groups;
 }
 
-async function rawRecommendationsForSource(apiKey, source, trackedIds, limit) {
+async function recommendationsForSource(env, apiKey, source, trackedIds, limit) {
+  const cached = await cachedRecommendationsForSource(env, apiKey, source, Math.max(limit, 16));
+  return cached
+    .filter(show => !trackedIds.has(Number(show.id)))
+    .map(show => ({
+      ...show,
+      source_show_id: Number(source.show_id),
+      source_show_name: source.name || show.source_show_name || ''
+    }))
+    .slice(0, limit);
+}
+
+async function cachedRecommendationsForSource(env, apiKey, source, limit, options = {}) {
+  const sourceId = Number(source.show_id);
+  if (!sourceId) return [];
+
+  if (!options.forceRefresh) {
+    const cached = await readRecommendationCache(env, sourceId);
+    if (cached) return cached.slice(0, limit);
+  }
+
+  const raw = await rawRecommendationsForSource(apiKey, source, limit);
+  const normalized = await Promise.all(raw.map(async show => normalizeRecommendation(show, await getProviders(apiKey, show.id))));
+  await writeRecommendationCache(env, sourceId, normalized).catch(error => {
+    console.error(`Failed to cache recommendations for ${sourceId}:`, error);
+  });
+  return normalized.slice(0, limit);
+}
+
+async function readRecommendationCache(env, sourceId) {
+  try {
+    const row = await env.DB.prepare(`
+      SELECT payload, updated_at
+      FROM recommendation_cache
+      WHERE source_show_id = ? AND cache_key = ?
+    `).bind(sourceId, RECOMMENDATION_CACHE_KEY).first();
+    if (!row?.payload || Number(row.updated_at || 0) < Math.floor(Date.now() / 1000) - RECOMMENDATION_CACHE_TTL_SECONDS) return null;
+    return JSON.parse(row.payload);
+  } catch {
+    return null;
+  }
+}
+
+async function writeRecommendationCache(env, sourceId, recommendations) {
+  await env.DB.prepare(`
+    INSERT INTO recommendation_cache (source_show_id, cache_key, payload, updated_at)
+    VALUES (?, ?, ?, unixepoch())
+    ON CONFLICT(source_show_id, cache_key) DO UPDATE SET
+      payload = excluded.payload,
+      updated_at = unixepoch()
+  `).bind(sourceId, RECOMMENDATION_CACHE_KEY, JSON.stringify(recommendations)).run();
+}
+
+async function rawRecommendationsForSource(apiKey, source, limit) {
   const sourceDetails = await getShowDetails(apiKey, source.show_id).catch(() => ({}));
   const sourceSignals = showSignals({ ...source, ...sourceDetails });
   const [recommended, similar] = await Promise.all([
@@ -141,17 +208,19 @@ async function rawRecommendationsForSource(apiKey, source, trackedIds, limit) {
   const prefilteredCandidates = dedupeRawCandidates(candidates)
     .sort((a, b) => basicCandidateScore(b) - basicCandidateScore(a))
     .slice(0, 24);
-  const collected = [];
 
-  for (const show of prefilteredCandidates) {
-    if (!show?.id || trackedIds.has(Number(show.id))) continue;
-    const candidateDetails = await getShowDetails(apiKey, show.id).catch(() => ({}));
+  const hydratedCandidates = await Promise.all(prefilteredCandidates
+    .filter(show => show?.id)
+    .map(async show => ({ show, candidateDetails: await getShowDetails(apiKey, show.id).catch(() => ({})) })));
+
+  const collected = hydratedCandidates
+    .map(({ show, candidateDetails }) => {
     const hydrated = { ...show, ...candidateDetails };
     const matchSources = [...new Set(show.match_sources || ['recommended'])];
     const candidateSignals = showSignals(hydrated);
     const score = recommendationScore(hydrated, sourceSignals, matchSources, candidateSignals);
-    if (!isViableRecommendation(hydrated, score, sourceSignals)) continue;
-    collected.push({
+    if (!isViableRecommendation(hydrated, score, sourceSignals)) return null;
+    return {
       ...hydrated,
       match_sources: matchSources,
       recommendation_score: score,
@@ -159,8 +228,9 @@ async function rawRecommendationsForSource(apiKey, source, trackedIds, limit) {
       source_category: sourceSignals.primaryCategory,
       source_show_id: Number(source.show_id),
       source_show_name: source.name || sourceDetails.name || ''
-    });
-  }
+    };
+  })
+    .filter(Boolean);
 
   return collected
     .sort((a, b) =>
