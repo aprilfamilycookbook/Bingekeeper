@@ -406,7 +406,7 @@ async function showApp(fromBilling = false) {
   document.getElementById('headerName').textContent = currentUser.name;
   syncBillingUi();
   syncAdminUi();
-  await loadPushConfig();
+  loadPushConfig();
   document.getElementById('searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); if (e.key === 'Escape') closeSearch(); });
   document.addEventListener('click', e => { const sr = document.getElementById('searchResults'); if (!sr.contains(e.target) && e.target !== document.getElementById('searchInput') && e.target !== document.getElementById('searchBtn')) { sr.classList.add('hidden'); } });
   await loadWatchlist();
