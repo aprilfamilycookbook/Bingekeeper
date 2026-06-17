@@ -120,6 +120,7 @@ async function recommendationGroupsForSources(apiKey, sourceShows, trackedIds, p
     groups.push({
       source_show_id: Number(source.show_id),
       source_show_name: source.name || '',
+      category: unique[0]?.source_category || '',
       recommendations
     });
   }
@@ -147,12 +148,15 @@ async function rawRecommendationsForSource(apiKey, source, trackedIds, limit) {
     const candidateDetails = await getShowDetails(apiKey, show.id).catch(() => ({}));
     const hydrated = { ...show, ...candidateDetails };
     const matchSources = [...new Set(show.match_sources || ['recommended'])];
-    const score = recommendationScore(hydrated, sourceSignals, matchSources);
+    const candidateSignals = showSignals(hydrated);
+    const score = recommendationScore(hydrated, sourceSignals, matchSources, candidateSignals);
     if (!isViableRecommendation(hydrated, score, sourceSignals)) continue;
     collected.push({
       ...hydrated,
       match_sources: matchSources,
       recommendation_score: score,
+      primary_category: candidateSignals.primaryCategory,
+      source_category: sourceSignals.primaryCategory,
       source_show_id: Number(source.show_id),
       source_show_name: source.name || sourceDetails.name || ''
     });
@@ -196,16 +200,17 @@ function dedupeRecommendations(shows) {
   return [...byId.values()];
 }
 
-function recommendationScore(show, sourceSignals = {}, matchSources = []) {
+function recommendationScore(show, sourceSignals = {}, matchSources = [], candidateSignals = showSignals(show)) {
   const popularity = Number(show.popularity || 0);
   const votes = Number(show.vote_count || 0);
   const firstYear = yearFromDate(show.first_air_date);
   const voteBoost = Math.min(Math.log10(votes + 1) * 14, 52);
   const recencyBoost = recencyScore(firstYear);
   const sourceBoost = (matchSources.includes('recommended') ? 28 : 0) + (matchSources.includes('similar') ? 14 : 0);
-  const candidateSignals = showSignals(show);
   const audienceBoost = sharedAudienceScore(sourceSignals, candidateSignals);
   const mismatchPenalty = audienceMismatchPenalty(sourceSignals, candidateSignals);
+  const categoryBoost = categoryCompatibilityScore(sourceSignals, candidateSignals);
+  const categoryPenalty = categoryMismatchPenalty(sourceSignals, candidateSignals);
   const creatorBoost = overlapCount(sourceSignals.creatorIds, candidateSignals.creatorIds) * 42;
   const castBoost = Math.min(overlapCount(sourceSignals.castIds, candidateSignals.castIds) * 14, 56);
   const companyBoost = overlapCount(sourceSignals.companyIds, candidateSignals.companyIds) * 12;
@@ -225,6 +230,8 @@ function recommendationScore(show, sourceSignals = {}, matchSources = []) {
     franchiseBoost -
     mismatchPenalty +
     audienceBoost -
+    categoryPenalty +
+    categoryBoost -
     oldPenalty
   );
 }
@@ -243,7 +250,8 @@ function normalizeRecommendation(show, providers = []) {
     popularity: Number(show.popularity || 0),
     vote_count: Number(show.vote_count || 0),
     recommendation_score: Number(show.recommendation_score || 0),
-    match_sources: show.match_sources || []
+    match_sources: show.match_sources || [],
+    category: show.primary_category || ''
   };
 }
 
@@ -275,6 +283,8 @@ function showSignals(show = {}) {
     castIds,
     universe: detectUniverse(title),
     clusters: detectAudienceClusters(text),
+    categories: detectAudienceCategories(text),
+    primaryCategory: primaryAudienceCategory(text),
     isProcedural: isProceduralText(text),
     hasGenreOnlyMatchRisk: hasGenreOnlyMatchRisk(text)
   };
@@ -288,6 +298,7 @@ function isViableRecommendation(show, score, sourceSignals = {}) {
   const candidateSignals = showSignals(show);
   const connectedUniverse = sourceSignals.universe && candidateSignals.universe === sourceSignals.universe;
   if (connectedUniverse) return score >= 45;
+  if (isStrictCategory(sourceSignals.primaryCategory) && !sameAudienceCategory(sourceSignals, candidateSignals)) return false;
   if (sourceSignals.clusters?.has('supernatural_fandom')) {
     const sameAudience = candidateSignals.clusters.has('supernatural_fandom') || candidateSignals.clusters.has('ya_fantasy') || candidateSignals.clusters.has('monster_mystery');
     if (!sameAudience && candidateSignals.isProcedural && score < 160) return false;
@@ -388,6 +399,58 @@ function audienceMismatchPenalty(sourceSignals, candidateSignals) {
   if (sourceSignals.clusters?.has('medical_drama') && !candidateSignals.clusters.has('medical_drama') && candidateSignals.hasGenreOnlyMatchRisk) penalty += 60;
   if (sourceSignals.clusters?.has('modern_western') && !candidateSignals.clusters.has('modern_western') && candidateSignals.hasGenreOnlyMatchRisk) penalty += 45;
   return penalty;
+}
+
+function categoryCompatibilityScore(sourceSignals, candidateSignals) {
+  if (sameAudienceCategory(sourceSignals, candidateSignals)) {
+    if (sourceSignals.primaryCategory === candidateSignals.primaryCategory) return 92;
+    if (sourceSignals.categories?.has(candidateSignals.primaryCategory)) return 58;
+    return 36;
+  }
+  return 0;
+}
+
+function categoryMismatchPenalty(sourceSignals, candidateSignals) {
+  if (!sourceSignals.primaryCategory || !candidateSignals.primaryCategory) return 0;
+  const strictPenalty = isStrictCategory(sourceSignals.primaryCategory) ? 145 : 70;
+  if (sourceSignals.primaryCategory === 'Reality TV' && candidateSignals.primaryCategory !== 'Reality TV') return 220;
+  if (candidateSignals.primaryCategory === 'Reality TV' && sourceSignals.primaryCategory !== 'Reality TV') return 160;
+  return strictPenalty;
+}
+
+function sameAudienceCategory(sourceSignals, candidateSignals) {
+  if (!sourceSignals.primaryCategory || !candidateSignals.primaryCategory) return false;
+  if (sourceSignals.primaryCategory === candidateSignals.primaryCategory) return true;
+  return sourceSignals.categories?.has(candidateSignals.primaryCategory) || candidateSignals.categories?.has(sourceSignals.primaryCategory);
+}
+
+function isStrictCategory(category) {
+  return ['Reality TV', 'Medical drama', 'Supernatural/fantasy', 'Western/neo-western', 'Anime', 'Documentary'].includes(category);
+}
+
+function primaryAudienceCategory(text) {
+  const categories = detectAudienceCategories(text);
+  return [...categories][0] || '';
+}
+
+function detectAudienceCategories(text) {
+  const categories = [];
+  const add = category => { if (!categories.includes(category)) categories.push(category); };
+
+  if (hasAny(text, ['reality', 'unscripted', 'competition', 'contestant', 'dating show', 'survivalist', 'real housewives', 'bachelor', 'bachelorette', 'talent show', 'documentary soap', 'docuseries']) && !hasAny(text, ['documentary', 'docudrama'])) add('Reality TV');
+  if (hasAny(text, ['hospital', 'doctor', 'surgeon', 'surgery', 'medical', 'medicine', 'nurse', 'patient', 'emergency room', 'anatomy', 'clinic'])) add('Medical drama');
+  if (hasAny(text, ['supernatural', 'demon', 'angel', 'vampire', 'werewolf', 'witch', 'ghost', 'occult', 'paranormal', 'monster', 'hunter', 'curse', 'magic', 'hell', 'heaven', 'fantasy'])) add('Supernatural/fantasy');
+  if (isProceduralText(text) || hasAny(text, ['police procedural', 'crime procedural', 'detective', 'homicide', 'forensic', 'crime scene', 'law enforcement', 'fbi', 'case of the week'])) add('Crime/procedural');
+  if (hasAny(text, ['western', 'neo western', 'ranch', 'frontier', 'sheriff', 'dutton', 'cowboy', 'texas', 'montana', 'wyoming', 'lawman'])) add('Western/neo-western');
+  if (hasAny(text, ['sitcom', 'comedy', 'stand up', 'workplace comedy', 'mockumentary', 'funny'])) add('Comedy');
+  if (hasAny(text, ['anime', 'manga', 'shonen', 'shojo', 'japanese animation'])) add('Anime');
+  if (hasAny(text, ['documentary', 'docuseries', 'true story', 'nature documentary', 'history documentary', 'investigative documentary'])) add('Documentary');
+  if (hasAny(text, ['science fiction', 'sci fi', 'space', 'alien', 'future', 'dystopian', 'robot', 'android', 'starship', 'time travel'])) add('Sci-fi');
+  if (hasAny(text, ['teen', 'high school', 'teenage', 'young adult', 'coming of age', 'academy'])) add('Teen drama');
+  if (hasAny(text, ['romance', 'romantic', 'love triangle', 'relationship drama', 'soap opera', 'melodrama'])) add('Romance/drama');
+  if (!categories.length && hasAny(text, ['drama'])) add('Romance/drama');
+
+  return new Set(categories);
 }
 
 function detectAudienceClusters(text) {
