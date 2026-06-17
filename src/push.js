@@ -56,6 +56,7 @@ export async function sendPushToUser(env, userId, payload) {
 
   const rows = await env.DB.prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ? AND enabled = 1').bind(userId).all();
   let sent = 0;
+  const failed = [];
   for (const sub of rows.results || []) {
     const result = await sendWebPush(env, {
       endpoint: sub.endpoint,
@@ -66,9 +67,13 @@ export async function sendPushToUser(env, userId, payload) {
       sent++;
     } else if ([404, 410].includes(result.status)) {
       await env.DB.prepare('UPDATE push_subscriptions SET enabled = 0, updated_at = unixepoch() WHERE id = ?').bind(sub.id).run();
+      failed.push({ status: result.status, reason: 'Expired browser subscription' });
+    } else {
+      failed.push({ status: result.status || 0, reason: result.error || result.body || 'Push service rejected the notification' });
     }
   }
-  return { sent };
+  const error = sent ? '' : pushFailureMessage(failed, rows.results?.length || 0);
+  return { sent, failed, error };
 }
 
 async function saveSubscription(env, userId, subscription, userAgent) {
@@ -104,7 +109,18 @@ async function sendWebPush(env, subscription, payload) {
     },
     body: encrypted
   });
-  return { ok: response.ok, status: response.status };
+  const responseBody = response.ok ? '' : await response.text().catch(() => '');
+  return { ok: response.ok, status: response.status, body: responseBody.slice(0, 220) };
+}
+
+function pushFailureMessage(failed, subscriptionCount) {
+  if (!subscriptionCount) return 'No active push subscriptions found';
+  const first = failed[0];
+  if (!first) return 'Push notification was not delivered';
+  if (first.status === 401 || first.status === 403) return 'Push provider rejected the VAPID keys. Disable and re-enable notifications, then try again.';
+  if (first.status === 404 || first.status === 410) return 'This browser subscription expired. Re-enable notifications on this device.';
+  if (first.status === 400) return 'Push provider rejected the notification payload. Please try re-enabling notifications.';
+  return `Push provider returned ${first.status || 'an error'}. Please try re-enabling notifications.`;
 }
 
 async function createVapidJwt(env, audience) {

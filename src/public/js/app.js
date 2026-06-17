@@ -271,7 +271,7 @@ async function disablePushNotifications() {
 async function sendTestPush() {
   const res = await api('/api/push/test', 'POST');
   if (res.error) { toast(res.error); return; }
-  toast('Test notification sent.');
+  toast(`Test notification sent to ${res.sent || 1} ${plural(res.sent || 1, 'device')}.`);
 }
 function urlBase64ToUint8Array(value) {
   const padding = '='.repeat((4 - value.length % 4) % 4);
