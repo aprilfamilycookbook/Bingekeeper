@@ -7,7 +7,7 @@ import { handleAdmin } from './admin.js';
 import { handlePush } from './push.js';
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
 
