@@ -885,10 +885,16 @@ function accountPushActionsHtml() {
   if (pushState.enabled) return '<button class="btn-cancel" onclick="sendTestPush()">Send test notification</button><button class="btn-cancel" onclick="disablePushNotifications().then(openAccount)">Disable notifications</button>';
   return '<button class="btn-save" onclick="enablePushNotifications().then(openAccount)">Enable notifications</button>';
 }
+function accountReferralHtml() {
+  if (!currentUser?.referral_code) return '';
+  const limit = currentUser.free_show_limit || 10;
+  const link = currentUser.referral_url || `https://bingekeeper.tv/?ref=${encodeURIComponent(currentUser.referral_code)}`;
+  return `<div><span>Invite link</span><strong>${esc(link)}</strong><small>Free slots: ${watchlist.length} of ${limit}</small></div>`;
+}
 function openAccount() {
   const isPlus = currentUser?.plan === 'plus';
   document.getElementById('modalTitle').textContent = 'Account';
-  document.getElementById('modalBody').innerHTML = `<div class="account-panel"><div><span>Name</span><strong>${esc(currentUser.name)}</strong></div><div><span>Email</span><strong>${esc(currentUser.email)}</strong></div><div><span>Plan</span><strong>${isPlus ? 'Plus' : 'Free'}</strong></div>${accountPushHtml()}</div><div class="modal-actions stacked"><button class="btn-save" onclick="openBilling()">${isPlus ? 'Manage Plus' : 'Upgrade to Plus'}</button>${accountPushActionsHtml()}<button class="btn-cancel" onclick="closeModal()">Close</button><button class="btn-danger" onclick="deleteAccount()">Delete account</button></div>`;
+  document.getElementById('modalBody').innerHTML = `<div class="account-panel"><div><span>Name</span><strong>${esc(currentUser.name)}</strong></div><div><span>Email</span><strong>${esc(currentUser.email)}</strong></div><div><span>Plan</span><strong>${isPlus ? 'Plus' : 'Free'}</strong></div>${accountReferralHtml()}${accountPushHtml()}</div><div class="modal-actions stacked"><button class="btn-save" onclick="openBilling()">${isPlus ? 'Manage Plus' : 'Upgrade to Plus'}</button>${currentUser?.referral_code ? '<button class="btn-cancel" onclick="copyReferralLink()">Copy invite link</button>' : ''}${accountPushActionsHtml()}<button class="btn-cancel" onclick="closeModal()">Close</button><button class="btn-danger" onclick="deleteAccount()">Delete account</button></div>`;
   openModal();
 }
 async function deleteAccount() {

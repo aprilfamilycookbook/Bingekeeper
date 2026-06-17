@@ -1412,7 +1412,8 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); c
   padding: 10px;
 }
 .account-panel span,
-.account-panel strong {
+.account-panel strong,
+.account-panel small {
   display: block;
 }
 .account-panel span {
@@ -1423,6 +1424,11 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); c
   font-size: 14px;
   margin-top: 2px;
   overflow-wrap: anywhere;
+}
+.account-panel small {
+  color: var(--text3);
+  font-size: 12px;
+  margin-top: 4px;
 }
 .modal-actions.stacked {
   flex-direction: column;
