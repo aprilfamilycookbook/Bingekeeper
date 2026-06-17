@@ -32,6 +32,7 @@ let currentUser = JSON.parse(localStorage.getItem('bk_user') || 'null');
 let watchlist = [];
 let searchResults = [];
 let dashboardRecommendations = [];
+let dashboardRecommendationGroups = [];
 let detailRecommendations = [];
 let pendingAddShow = null;
 let activeTab = 'All';
@@ -250,7 +251,7 @@ async function verifyEmail(t) {
   if (res.error) { msg.style.color = '#ef4444'; msg.textContent = res.error;
   } else { msg.style.color = '#22c55e'; msg.textContent = res.message + ' Redirecting to login...'; setTimeout(() => { window.location.href = '/'; }, 2500); }
 }
-function doLogout() { token = null; currentUser = null; localStorage.removeItem('bk_token'); localStorage.removeItem('bk_user'); watchlist = []; dashboardRecommendations = []; detailRecommendations = []; adminSocialData = null; showAuth(); }
+function doLogout() { token = null; currentUser = null; localStorage.removeItem('bk_token'); localStorage.removeItem('bk_user'); watchlist = []; dashboardRecommendations = []; dashboardRecommendationGroups = []; detailRecommendations = []; adminSocialData = null; showAuth(); }
 async function showApp(fromBilling = false) {
   document.getElementById('authPage').classList.add('hidden'); document.getElementById('publicPage').classList.add('hidden'); document.getElementById('adminSocialPage').classList.add('hidden'); document.getElementById('appPage').classList.remove('hidden');
   await refreshCurrentUser();
@@ -414,12 +415,14 @@ function renderDashboard() {
 async function loadDashboardRecommendations() {
   const section = document.getElementById('dashboardRecommendationsSection');
   const grid = document.getElementById('dashboardRecommendations');
-  if (!watchlist.length) { dashboardRecommendations = []; section.classList.add('hidden'); grid.innerHTML = ''; return; }
+  if (!watchlist.length) { dashboardRecommendations = []; dashboardRecommendationGroups = []; section.classList.add('hidden'); grid.innerHTML = ''; return; }
   const res = await api('/api/recommendations/dashboard', 'GET');
-  if (res.error || !res.recommendations?.length) { dashboardRecommendations = []; section.classList.add('hidden'); grid.innerHTML = ''; return; }
-  dashboardRecommendations = res.recommendations.slice(0, 8);
+  const groups = (res.groups || []).filter(group => group.recommendations?.length);
+  if (res.error || !groups.length) { dashboardRecommendations = []; dashboardRecommendationGroups = []; section.classList.add('hidden'); grid.innerHTML = ''; return; }
+  dashboardRecommendationGroups = groups;
+  dashboardRecommendations = groups.flatMap(group => group.recommendations);
   section.classList.remove('hidden');
-  grid.innerHTML = renderRecommendationCards(dashboardRecommendations, 'dashboard');
+  grid.innerHTML = renderRecommendationGroups(groups);
 }
 async function loadShowRecommendations(showId) {
   const grid = document.getElementById('detailRecommendations');
@@ -442,6 +445,26 @@ function renderRecommendationCards(items, source) {
       <button class="btn-add" onclick="openRecommendationAdd('${source}', ${index})">+ Add</button>
     </div>
   </article>`).join('');
+}
+function renderRecommendationGroups(groups) {
+  let globalIndex = 0;
+  return groups.map(group => {
+    const cards = group.recommendations.map(show => {
+      const index = globalIndex++;
+      return `<article class="recommendation-card">
+        ${show.poster_path ? `<img src="https://image.tmdb.org/t/p/w185${show.poster_path}" alt="${esc(show.name)} poster" loading="lazy">` : '<div class="recommendation-poster">TV</div>'}
+        <div class="recommendation-card-body">
+          <h3>${esc(show.name)}</h3>
+          <p>Because you track ${esc(group.source_show_name || show.source_show_name || 'this show')}</p>
+          <button class="btn-add" onclick="openRecommendationAdd('dashboard', ${index})">+ Add</button>
+        </div>
+      </article>`;
+    }).join('');
+    return `<section class="recommendation-group">
+      <h3>Because you track ${esc(group.source_show_name || 'this show')}</h3>
+      <div class="recommendation-row">${cards}</div>
+    </section>`;
+  }).join('');
 }
 function syncBillingUi() {
   const isPlus = currentUser?.plan === 'plus';

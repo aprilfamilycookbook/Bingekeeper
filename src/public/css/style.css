@@ -876,6 +876,31 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.5rem; }
   grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
 }
 
+#dashboardRecommendations {
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+.recommendation-group {
+  min-width: 0;
+}
+
+.recommendation-group > h3 {
+  color: var(--text);
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.recommendation-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(128px, 150px);
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  scrollbar-width: thin;
+}
+
 .recommendation-card {
   border: 1px solid var(--border);
   border-radius: var(--radius);

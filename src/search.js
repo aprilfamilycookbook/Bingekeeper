@@ -41,8 +41,9 @@ export async function handleRecommendations(request, env, url, path) {
 
     if (path === '/api/recommendations/dashboard') {
       const sourceShows = tracked.slice(0, 6);
-      const recommendations = await recommendationsForSources(tmdbApiKey, sourceShows, trackedIds, 8);
-      return jsonResponse({ source: 'tmdb', strategy: 'tracked_show_recommendations', recommendations });
+      const groups = await recommendationGroupsForSources(tmdbApiKey, sourceShows, trackedIds, 6);
+      const recommendations = groups.flatMap(group => group.recommendations).slice(0, 12);
+      return jsonResponse({ source: 'tmdb', strategy: 'grouped_tracked_show_recommendations', groups, recommendations });
     }
 
     const showId = Number(url.searchParams.get('show_id'));
@@ -82,35 +83,7 @@ async function recommendationsForSources(apiKey, sourceShows, trackedIds, limit)
   const collected = [];
   for (const source of sourceShows) {
     if (!source?.show_id) continue;
-    const sourceDetails = await getShowDetails(apiKey, source.show_id).catch(() => ({}));
-    const sourceSignals = showSignals({ ...source, ...sourceDetails });
-    const [recommended, similar] = await Promise.all([
-      tmdb(apiKey, `/tv/${source.show_id}/recommendations`, { page: '1' }).catch(() => ({ results: [] })),
-      tmdb(apiKey, `/tv/${source.show_id}/similar`, { page: '1' }).catch(() => ({ results: [] }))
-    ]);
-    const candidates = [
-      ...(recommended.results || []).map(show => ({ ...show, match_sources: ['recommended'] })),
-      ...(similar.results || []).map(show => ({ ...show, match_sources: ['similar'] }))
-    ];
-    const prefilteredCandidates = dedupeRawCandidates(candidates)
-      .sort((a, b) => basicCandidateScore(b) - basicCandidateScore(a))
-      .slice(0, 24);
-
-    for (const show of prefilteredCandidates) {
-      if (!show?.id || trackedIds.has(Number(show.id))) continue;
-      const candidateDetails = await getShowDetails(apiKey, show.id).catch(() => ({}));
-      const hydrated = { ...show, ...candidateDetails };
-      const matchSources = [...new Set(show.match_sources || ['recommended'])];
-      const score = recommendationScore(hydrated, sourceSignals, matchSources);
-      if (!isViableRecommendation(hydrated, score, sourceSignals)) continue;
-      collected.push({
-        ...hydrated,
-        match_sources: matchSources,
-        recommendation_score: score,
-        source_show_id: Number(source.show_id),
-        source_show_name: source.name || sourceDetails.name || ''
-      });
-    }
+    collected.push(...await rawRecommendationsForSource(apiKey, source, trackedIds, limit));
   }
 
   const unique = dedupeRecommendations(collected)
@@ -123,6 +96,76 @@ async function recommendationsForSources(apiKey, sourceShows, trackedIds, limit)
     .slice(0, limit);
 
   return Promise.all(unique.map(async show => normalizeRecommendation(show, await getProviders(apiKey, show.id))));
+}
+
+async function recommendationGroupsForSources(apiKey, sourceShows, trackedIds, perSourceLimit) {
+  const groups = [];
+  const usedRecommendationIds = new Set();
+  for (const source of sourceShows) {
+    if (!source?.show_id) continue;
+    const raw = await rawRecommendationsForSource(apiKey, source, trackedIds, perSourceLimit + 4);
+    const unique = dedupeRecommendations(raw)
+      .filter(show => !usedRecommendationIds.has(Number(show.id)))
+      .sort((a, b) =>
+        Number(b.recommendation_score || 0) - Number(a.recommendation_score || 0) ||
+        Number(b.popularity || 0) - Number(a.popularity || 0) ||
+        Number(b.vote_count || 0) - Number(a.vote_count || 0) ||
+        String(a.name).localeCompare(String(b.name))
+      )
+      .slice(0, perSourceLimit);
+    if (!unique.length) continue;
+
+    unique.forEach(show => usedRecommendationIds.add(Number(show.id)));
+    const recommendations = await Promise.all(unique.map(async show => normalizeRecommendation(show, await getProviders(apiKey, show.id))));
+    groups.push({
+      source_show_id: Number(source.show_id),
+      source_show_name: source.name || '',
+      recommendations
+    });
+  }
+  return groups;
+}
+
+async function rawRecommendationsForSource(apiKey, source, trackedIds, limit) {
+  const sourceDetails = await getShowDetails(apiKey, source.show_id).catch(() => ({}));
+  const sourceSignals = showSignals({ ...source, ...sourceDetails });
+  const [recommended, similar] = await Promise.all([
+    tmdb(apiKey, `/tv/${source.show_id}/recommendations`, { page: '1' }).catch(() => ({ results: [] })),
+    tmdb(apiKey, `/tv/${source.show_id}/similar`, { page: '1' }).catch(() => ({ results: [] }))
+  ]);
+  const candidates = [
+    ...(recommended.results || []).map(show => ({ ...show, match_sources: ['recommended'] })),
+    ...(similar.results || []).map(show => ({ ...show, match_sources: ['similar'] }))
+  ];
+  const prefilteredCandidates = dedupeRawCandidates(candidates)
+    .sort((a, b) => basicCandidateScore(b) - basicCandidateScore(a))
+    .slice(0, 24);
+  const collected = [];
+
+  for (const show of prefilteredCandidates) {
+    if (!show?.id || trackedIds.has(Number(show.id))) continue;
+    const candidateDetails = await getShowDetails(apiKey, show.id).catch(() => ({}));
+    const hydrated = { ...show, ...candidateDetails };
+    const matchSources = [...new Set(show.match_sources || ['recommended'])];
+    const score = recommendationScore(hydrated, sourceSignals, matchSources);
+    if (!isViableRecommendation(hydrated, score, sourceSignals)) continue;
+    collected.push({
+      ...hydrated,
+      match_sources: matchSources,
+      recommendation_score: score,
+      source_show_id: Number(source.show_id),
+      source_show_name: source.name || sourceDetails.name || ''
+    });
+  }
+
+  return collected
+    .sort((a, b) =>
+      Number(b.recommendation_score || 0) - Number(a.recommendation_score || 0) ||
+      Number(b.popularity || 0) - Number(a.popularity || 0) ||
+      Number(b.vote_count || 0) - Number(a.vote_count || 0) ||
+      String(a.name).localeCompare(String(b.name))
+    )
+    .slice(0, limit);
 }
 
 function dedupeRawCandidates(shows) {
@@ -280,6 +323,7 @@ function franchiseRelationshipScore(sourceSignals, candidateSignals) {
   if (sourceSignals.universe === 'yellowstone' && isTaylorSheridanAdjacent(candidateSignals.title)) score += 38;
   if (sourceSignals.universe === 'buffyverse' && candidateSignals.universe === 'buffyverse') score += 100;
   if (sourceSignals.universe === 'tvd' && candidateSignals.universe === 'tvd') score += 100;
+  if (sourceSignals.universe === 'greys' && candidateSignals.universe === 'greys') score += 100;
   return score;
 }
 
@@ -294,6 +338,7 @@ function detectUniverse(title) {
   ) return 'yellowstone';
   if (title.includes('buffy') || title === 'angel') return 'buffyverse';
   if (title.includes('vampire diaries') || title.includes('the originals') || title.includes('legacies')) return 'tvd';
+  if (title.includes('grey s anatomy') || title.includes('greys anatomy') || title.includes('station 19') || title.includes('private practice')) return 'greys';
   return '';
 }
 
@@ -324,6 +369,8 @@ function sharedAudienceScore(sourceSignals, candidateSignals) {
     if (candidateSignals.clusters.has('ya_fantasy')) score += 34;
     if (candidateSignals.clusters.has('occult_romance')) score += 22;
   }
+  if (sourceSignals.clusters?.has('medical_drama') && candidateSignals.clusters.has('medical_drama')) score += 82;
+  if (sourceSignals.clusters?.has('modern_western') && candidateSignals.clusters.has('modern_western')) score += 64;
   return score;
 }
 
@@ -338,6 +385,8 @@ function audienceMismatchPenalty(sourceSignals, candidateSignals) {
     if (!sameFandom && candidateSignals.isProcedural) penalty += 120;
     if (!sameFandom && candidateSignals.hasGenreOnlyMatchRisk) penalty += 55;
   }
+  if (sourceSignals.clusters?.has('medical_drama') && !candidateSignals.clusters.has('medical_drama') && candidateSignals.hasGenreOnlyMatchRisk) penalty += 60;
+  if (sourceSignals.clusters?.has('modern_western') && !candidateSignals.clusters.has('modern_western') && candidateSignals.hasGenreOnlyMatchRisk) penalty += 45;
   return penalty;
 }
 
@@ -357,6 +406,9 @@ function detectAudienceClusters(text) {
   }
   if (hasAny(text, ['western', 'ranch', 'frontier', 'sheriff', 'dutton', 'cowboy', 'texas', 'montana'])) {
     clusters.add('modern_western');
+  }
+  if (hasAny(text, ['hospital', 'doctor', 'surgeon', 'surgery', 'medical', 'medicine', 'nurse', 'patient', 'emergency room', 'anatomy'])) {
+    clusters.add('medical_drama');
   }
   return clusters;
 }
