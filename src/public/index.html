@@ -207,6 +207,14 @@
         </div>
         <button class="btn-primary" onclick="openBilling()">Upgrade to Plus</button>
       </section>
+      <section class="push-settings hidden" id="pushSettingsSection">
+        <div>
+          <p class="eyebrow">Notifications</p>
+          <h2>Episode alerts on this device</h2>
+          <p id="pushSettingsCopy">Turn on browser notifications to get release alerts when BingeKeeper finds new episodes or seasons.</p>
+        </div>
+        <div class="push-actions" id="pushSettingsActions"></div>
+      </section>
       <section class="upcoming-section hidden" id="upcomingSection">
         <div class="section-heading">
           <div>
@@ -342,6 +350,6 @@
 
   <div id="toast" class="toast hidden"></div>
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
-  <script src="/js/app.js?v=launch-v2"></script>
+  <script src="/js/app.js?v=push-v1"></script>
 </body>
 </html>

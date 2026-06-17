@@ -4,6 +4,7 @@ import { handleRecommendations, handleSearch } from './search.js';
 import { handleCron } from './cron.js';
 import { handleBilling, handleStripeWebhook } from './billing.js';
 import { handleAdmin } from './admin.js';
+import { handlePush } from './push.js';
 
 export default {
   async fetch(request, env) {
@@ -32,6 +33,8 @@ export default {
       response = await handleBilling(request, env, path);
     } else if (path.startsWith('/api/admin/')) {
       response = await handleAdmin(request, env, path);
+    } else if (path.startsWith('/api/push/')) {
+      response = await handlePush(request, env, path);
     } else if (path.startsWith('/api/watchlist')) {
       response = await handleWatchlist(request, env, path);
     } else if (path.startsWith('/api/recommendations')) {

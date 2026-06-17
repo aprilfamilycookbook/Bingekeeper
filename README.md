@@ -31,6 +31,9 @@ Then fill in:
 - `GOOGLE_CLIENT_SECRET`
 - `TURNSTILE_SITE_KEY`
 - `TURNSTILE_SECRET_KEY`
+- `VAPID_PUBLIC_KEY`
+- `VAPID_PRIVATE_KEY`
+- `VAPID_SUBJECT`
 
 Run locally:
 
@@ -82,3 +85,11 @@ The admin social content dashboard is available at `/admin/social`. Grant access
 Google Sign-In uses OAuth. Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` as Worker secrets/vars, and configure this authorized redirect URI in Google Cloud: `https://bingekeeper.tv/auth/google/callback`. OAuth account links are stored in `oauth_accounts`; this keeps existing email/password accounts, watchlists, subscriptions, admin status, and settings attached to the same user record when the Google email matches.
 
 Cloudflare Turnstile protects account registration and password reset email requests. Create a Turnstile widget for `bingekeeper.tv`, then add `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` to the Worker environment. Normal email/password login is intentionally not protected by Turnstile.
+
+PWA push notifications use the Web Push API. Generate VAPID keys with:
+
+```sh
+npx web-push generate-vapid-keys --json
+```
+
+Set `VAPID_PUBLIC_KEY` as a Worker variable or secret, set `VAPID_PRIVATE_KEY` as a Cloudflare Worker secret, and set `VAPID_SUBJECT` to a contact URI such as `mailto:hello@bingekeeper.tv`. Browser push subscriptions are stored per user/device in `push_subscriptions`. Android Chrome supports browser/PWA notifications. iOS Safari support requires the user to install BingeKeeper to the Home Screen and enable notifications from the installed app.

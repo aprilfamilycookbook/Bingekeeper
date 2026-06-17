@@ -38,6 +38,8 @@ let pendingAddShow = null;
 let activeTab = 'All';
 let adminSocialData = null;
 let authConfig = { turnstileSiteKey: '' };
+let pushConfig = { supported: false, vapidPublicKey: '' };
+let pushState = { available: false, permission: 'default', enabled: false, endpoint: '' };
 let deferredInstallPrompt = null;
 const turnstileWidgets = { register: null, forgot: null };
 const turnstileActions = { register: 'register', forgot: 'password_reset' };
@@ -134,6 +136,149 @@ async function installApp() {
   await deferredInstallPrompt.userChoice.catch(() => null);
   deferredInstallPrompt = null;
   syncInstallButtons();
+}
+async function loadPushConfig() {
+  pushState = {
+    available: 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window,
+    permission: 'Notification' in window ? Notification.permission : 'unsupported',
+    enabled: false,
+    endpoint: ''
+  };
+
+  const section = document.getElementById('pushSettingsSection');
+  if (!section) return;
+
+  if (!pushState.available) {
+    pushConfig = { supported: false, vapidPublicKey: '' };
+    renderPushSettings();
+    return;
+  }
+
+  const res = await api('/api/push/config', 'GET');
+  if (res.error) {
+    pushConfig = { supported: false, vapidPublicKey: '' };
+    renderPushSettings('Notification settings could not be loaded.');
+    return;
+  }
+
+  pushConfig = res;
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    pushState.enabled = Boolean(subscription);
+    pushState.endpoint = subscription?.endpoint || '';
+  } catch {
+    pushState.enabled = false;
+    pushState.endpoint = '';
+  }
+  renderPushSettings();
+}
+function renderPushSettings(message = '') {
+  const section = document.getElementById('pushSettingsSection');
+  const copy = document.getElementById('pushSettingsCopy');
+  const actions = document.getElementById('pushSettingsActions');
+  if (!section || !copy || !actions) return;
+
+  section.classList.remove('hidden');
+
+  if (!pushState.available) {
+    copy.textContent = 'Browser notifications are not supported in this browser. Email reminders will still work.';
+    actions.innerHTML = '';
+    return;
+  }
+
+  if (!pushConfig.supported) {
+    copy.textContent = message || 'Push notifications are not configured yet. Email reminders will still work.';
+    actions.innerHTML = '';
+    return;
+  }
+
+  if (isIos() && !isStandaloneApp()) {
+    copy.textContent = 'On iPhone or iPad, install BingeKeeper to your Home Screen first, then open it from the app icon to enable push notifications.';
+    actions.innerHTML = '<button class="btn-secondary" onclick="installApp()">Install app</button>';
+    return;
+  }
+
+  if (pushState.permission === 'denied') {
+    copy.textContent = 'Notifications are blocked in this browser. Enable them in browser or site settings, then reload BingeKeeper.';
+    actions.innerHTML = '';
+    return;
+  }
+
+  if (pushState.enabled) {
+    copy.textContent = message || 'Browser notifications are enabled on this device. Email reminders remain available as fallback.';
+    actions.innerHTML = '<button class="btn-secondary" onclick="sendTestPush()">Send test</button><button class="btn-ghost" onclick="disablePushNotifications()">Disable</button>';
+    return;
+  }
+
+  copy.textContent = message || 'Turn on browser notifications to get alerts on this device when tracked shows have new episodes or seasons.';
+  actions.innerHTML = '<button class="btn-primary" onclick="enablePushNotifications()">Enable notifications</button>';
+}
+async function enablePushNotifications() {
+  if (!pushState.available || !pushConfig.supported) {
+    renderPushSettings('Push notifications are not available right now.');
+    return;
+  }
+  if (isIos() && !isStandaloneApp()) {
+    renderPushSettings();
+    return;
+  }
+
+  try {
+    const permission = await Notification.requestPermission();
+    pushState.permission = permission;
+    if (permission !== 'granted') {
+      renderPushSettings('Notifications were not enabled. You can try again later from this device.');
+      return;
+    }
+
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(pushConfig.vapidPublicKey)
+    });
+    const res = await api('/api/push/subscribe', 'POST', { subscription: subscription.toJSON() });
+    if (res.error) {
+      await subscription.unsubscribe().catch(() => {});
+      renderPushSettings(res.error);
+      return;
+    }
+
+    pushState.enabled = true;
+    pushState.endpoint = subscription.endpoint;
+    renderPushSettings('Notifications are enabled on this device.');
+    toast('Notifications enabled.');
+  } catch {
+    renderPushSettings('Could not enable notifications. Please refresh and try again.');
+  }
+}
+async function disablePushNotifications() {
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    const endpoint = subscription?.endpoint || pushState.endpoint;
+    if (subscription) await subscription.unsubscribe();
+    await api('/api/push/subscribe', 'DELETE', endpoint ? { endpoint } : null);
+    pushState.enabled = false;
+    pushState.endpoint = '';
+    renderPushSettings('Notifications are disabled on this device.');
+    toast('Notifications disabled.');
+  } catch {
+    renderPushSettings('Could not disable notifications. Please try again.');
+  }
+}
+async function sendTestPush() {
+  const res = await api('/api/push/test', 'POST');
+  if (res.error) { toast(res.error); return; }
+  toast('Test notification sent.');
+}
+function urlBase64ToUint8Array(value) {
+  const padding = '='.repeat((4 - value.length % 4) % 4);
+  const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+}
+function isIos() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 function showOAuthError(message) {
   hideAllAuthForms();
@@ -251,7 +396,7 @@ async function verifyEmail(t) {
   if (res.error) { msg.style.color = '#ef4444'; msg.textContent = res.error;
   } else { msg.style.color = '#22c55e'; msg.textContent = res.message + ' Redirecting to login...'; setTimeout(() => { window.location.href = '/'; }, 2500); }
 }
-function doLogout() { token = null; currentUser = null; localStorage.removeItem('bk_token'); localStorage.removeItem('bk_user'); watchlist = []; dashboardRecommendations = []; dashboardRecommendationGroups = []; detailRecommendations = []; adminSocialData = null; showAuth(); }
+function doLogout() { token = null; currentUser = null; localStorage.removeItem('bk_token'); localStorage.removeItem('bk_user'); watchlist = []; dashboardRecommendations = []; dashboardRecommendationGroups = []; detailRecommendations = []; adminSocialData = null; pushState = { available: false, permission: 'default', enabled: false, endpoint: '' }; showAuth(); }
 async function showApp(fromBilling = false) {
   document.getElementById('authPage').classList.add('hidden'); document.getElementById('publicPage').classList.add('hidden'); document.getElementById('adminSocialPage').classList.add('hidden'); document.getElementById('appPage').classList.remove('hidden');
   await refreshCurrentUser();
@@ -260,6 +405,7 @@ async function showApp(fromBilling = false) {
   document.getElementById('headerName').textContent = currentUser.name;
   syncBillingUi();
   syncAdminUi();
+  await loadPushConfig();
   document.getElementById('searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); if (e.key === 'Escape') closeSearch(); });
   document.addEventListener('click', e => { const sr = document.getElementById('searchResults'); if (!sr.contains(e.target) && e.target !== document.getElementById('searchInput') && e.target !== document.getElementById('searchBtn')) { sr.classList.add('hidden'); } });
   await loadWatchlist();
@@ -641,10 +787,22 @@ async function copyText(text, message = 'Copied Facebook post.') {
     toast(message);
   }
 }
+function accountPushHtml() {
+  if (!pushState.available) return '<div><span>Browser notifications</span><strong>Not supported on this browser</strong></div>';
+  if (!pushConfig.supported) return '<div><span>Browser notifications</span><strong>Not configured yet</strong></div>';
+  if (pushState.permission === 'denied') return '<div><span>Browser notifications</span><strong>Blocked in browser settings</strong></div>';
+  return `<div><span>Browser notifications</span><strong>${pushState.enabled ? 'Enabled on this device' : 'Off on this device'}</strong></div>`;
+}
+function accountPushActionsHtml() {
+  if (!pushState.available || !pushConfig.supported || pushState.permission === 'denied') return '';
+  if (isIos() && !isStandaloneApp()) return '<button class="btn-cancel" onclick="installApp()">Install app for iOS notifications</button>';
+  if (pushState.enabled) return '<button class="btn-cancel" onclick="sendTestPush()">Send test notification</button><button class="btn-cancel" onclick="disablePushNotifications().then(openAccount)">Disable notifications</button>';
+  return '<button class="btn-save" onclick="enablePushNotifications().then(openAccount)">Enable notifications</button>';
+}
 function openAccount() {
   const isPlus = currentUser?.plan === 'plus';
   document.getElementById('modalTitle').textContent = 'Account';
-  document.getElementById('modalBody').innerHTML = `<div class="account-panel"><div><span>Name</span><strong>${esc(currentUser.name)}</strong></div><div><span>Email</span><strong>${esc(currentUser.email)}</strong></div><div><span>Plan</span><strong>${isPlus ? 'Plus' : 'Free'}</strong></div></div><div class="modal-actions stacked"><button class="btn-save" onclick="openBilling()">${isPlus ? 'Manage Plus' : 'Upgrade to Plus'}</button><button class="btn-cancel" onclick="closeModal()">Close</button><button class="btn-danger" onclick="deleteAccount()">Delete account</button></div>`;
+  document.getElementById('modalBody').innerHTML = `<div class="account-panel"><div><span>Name</span><strong>${esc(currentUser.name)}</strong></div><div><span>Email</span><strong>${esc(currentUser.email)}</strong></div><div><span>Plan</span><strong>${isPlus ? 'Plus' : 'Free'}</strong></div>${accountPushHtml()}</div><div class="modal-actions stacked"><button class="btn-save" onclick="openBilling()">${isPlus ? 'Manage Plus' : 'Upgrade to Plus'}</button>${accountPushActionsHtml()}<button class="btn-cancel" onclick="closeModal()">Close</button><button class="btn-danger" onclick="deleteAccount()">Delete account</button></div>`;
   openModal();
 }
 async function deleteAccount() {

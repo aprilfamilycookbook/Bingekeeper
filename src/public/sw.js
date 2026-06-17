@@ -1,9 +1,9 @@
-const CACHE_NAME = 'bingekeeper-pwa-v2';
+const CACHE_NAME = 'bingekeeper-pwa-v3';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/css/style.css',
-  '/js/app.js?v=launch-v2',
+  '/js/app.js?v=push-v1',
   '/manifest.webmanifest',
   '/images/logo.png',
   '/images/dashboard-preview.png',
@@ -57,5 +57,45 @@ self.addEventListener('fetch', event => {
       caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
       return response;
     }))
+  );
+});
+
+self.addEventListener('push', event => {
+  let data = {};
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch {
+      data = { body: event.data.text() };
+    }
+  }
+
+  const title = data.title || 'BingeKeeper';
+  const options = {
+    body: data.body || 'A tracked show has a new update.',
+    icon: '/images/icons/icon-192.png',
+    badge: '/images/icons/icon-192.png',
+    data: {
+      url: data.url || '/'
+    }
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const targetUrl = new URL(event.notification.data?.url || '/', self.location.origin).toString();
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+      for (const client of clientList) {
+        if ('focus' in client && new URL(client.url).origin === self.location.origin) {
+          return client.navigate(targetUrl).then(() => client.focus());
+        }
+      }
+      if (clients.openWindow) return clients.openWindow(targetUrl);
+      return undefined;
+    })
   );
 });

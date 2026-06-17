@@ -787,6 +787,32 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.5rem; }
   color: var(--text2);
   font-size: 14px;
 }
+.push-settings {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 1.4rem;
+  padding: 18px 20px;
+  border: 1px solid rgba(51,214,199,0.22);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(51,214,199,0.1), rgba(108,99,255,0.12)), var(--bg2);
+}
+.push-settings h2 {
+  font-size: 18px;
+}
+.push-settings p:not(.eyebrow) {
+  color: var(--text2);
+  font-size: 14px;
+  max-width: 680px;
+}
+.push-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .stat-card {
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1448,7 +1474,12 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); c
   .search-bar { flex-direction: column; }
   .header-right { gap: 7px; }
   .header-name { display: none; }
-  .plus-banner { align-items: stretch; flex-direction: column; }
+  .plus-banner,
+  .push-settings { align-items: stretch; flex-direction: column; }
+  .push-actions { justify-content: stretch; }
+  .push-actions .btn-primary,
+  .push-actions .btn-secondary,
+  .push-actions .btn-ghost { width: 100%; }
   .public-page { padding: 1rem; }
   .public-card { padding: 20px; }
   .pricing-grid { grid-template-columns: 1fr; }

@@ -30,6 +30,20 @@ CREATE TABLE IF NOT EXISTS oauth_accounts (
   UNIQUE(provider, provider_user_id)
 );
 
+-- Web Push subscriptions (one row per browser/device)
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  endpoint TEXT UNIQUE NOT NULL,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  user_agent TEXT,
+  enabled INTEGER DEFAULT 1,
+  created_at INTEGER DEFAULT (unixepoch()),
+  updated_at INTEGER DEFAULT (unixepoch()),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
 -- Shows table (cached TMDB data)
 CREATE TABLE IF NOT EXISTS shows (
   id INTEGER PRIMARY KEY,
