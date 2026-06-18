@@ -43,7 +43,7 @@ export async function handlePush(request, env, path) {
       title: 'BingeKeeper notifications are on',
       body: 'You will get alerts when tracked shows have new episodes or seasons.',
       url: '/'
-    });
+    }, { noPayload: true });
     if (!result.sent) return jsonResponse({ error: result.error || 'No active push subscriptions found' }, 400);
     return jsonResponse({
       message: 'Test notification sent',
@@ -56,7 +56,7 @@ export async function handlePush(request, env, path) {
   return jsonResponse({ error: 'Not found' }, 404);
 }
 
-export async function sendPushToUser(env, userId, payload) {
+export async function sendPushToUser(env, userId, payload, options = {}) {
   if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY) return { sent: 0, error: 'Push is not configured' };
 
   const rows = await env.DB.prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ? AND enabled = 1').bind(userId).all();
@@ -67,7 +67,7 @@ export async function sendPushToUser(env, userId, payload) {
     const result = await sendWebPush(env, {
       endpoint: sub.endpoint,
       keys: { p256dh: sub.p256dh, auth: sub.auth }
-    }, payload).catch(error => ({ ok: false, status: 0, error }));
+    }, payload, options).catch(error => ({ ok: false, status: 0, error }));
 
     if (result.ok) {
       sent++;
@@ -100,20 +100,23 @@ function isValidSubscription(subscription) {
   return Boolean(subscription?.endpoint && subscription?.keys?.p256dh && subscription?.keys?.auth);
 }
 
-async function sendWebPush(env, subscription, payload) {
-  const body = JSON.stringify(payload);
-  const encrypted = await encryptPushPayload(subscription, body);
+async function sendWebPush(env, subscription, payload, options = {}) {
   const vapidJwt = await createVapidJwt(env, new URL(subscription.endpoint).origin);
+  const headers = {
+    TTL: '86400',
+    Urgency: 'normal',
+    Authorization: `vapid t=${vapidJwt}, k=${env.VAPID_PUBLIC_KEY}`
+  };
+  let body;
+  if (!options.noPayload) {
+    body = await encryptPushPayload(subscription, JSON.stringify(payload));
+    headers['Content-Encoding'] = 'aes128gcm';
+    headers['Content-Type'] = 'application/octet-stream';
+  }
   const response = await fetch(subscription.endpoint, {
     method: 'POST',
-    headers: {
-      TTL: '86400',
-      Urgency: 'normal',
-      'Content-Encoding': 'aes128gcm',
-      'Content-Type': 'application/octet-stream',
-      Authorization: `vapid t=${vapidJwt}, k=${env.VAPID_PUBLIC_KEY}`
-    },
-    body: encrypted
+    headers,
+    body
   });
   const responseBody = response.ok ? '' : await response.text().catch(() => '');
   return { ok: response.ok, status: response.status, body: responseBody.slice(0, 220) };
