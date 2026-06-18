@@ -45,7 +45,12 @@ export async function handlePush(request, env, path) {
       url: '/'
     });
     if (!result.sent) return jsonResponse({ error: result.error || 'No active push subscriptions found' }, 400);
-    return jsonResponse({ message: 'Test notification sent', sent: result.sent });
+    return jsonResponse({
+      message: 'Test notification sent',
+      sent: result.sent,
+      attempted: result.attempted,
+      failed: result.failed
+    });
   }
 
   return jsonResponse({ error: 'Not found' }, 404);
@@ -57,7 +62,8 @@ export async function sendPushToUser(env, userId, payload) {
   const rows = await env.DB.prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ? AND enabled = 1').bind(userId).all();
   let sent = 0;
   const failed = [];
-  for (const sub of rows.results || []) {
+  const subscriptions = rows.results || [];
+  for (const sub of subscriptions) {
     const result = await sendWebPush(env, {
       endpoint: sub.endpoint,
       keys: { p256dh: sub.p256dh, auth: sub.auth }
@@ -72,8 +78,8 @@ export async function sendPushToUser(env, userId, payload) {
       failed.push({ status: result.status || 0, reason: result.error || result.body || 'Push service rejected the notification' });
     }
   }
-  const error = sent ? '' : pushFailureMessage(failed, rows.results?.length || 0);
-  return { sent, failed, error };
+  const error = sent ? '' : pushFailureMessage(failed, subscriptions.length);
+  return { sent, attempted: subscriptions.length, failed, error };
 }
 
 async function saveSubscription(env, userId, subscription, userAgent) {

@@ -278,7 +278,30 @@ async function disablePushNotifications() {
 async function sendTestPush() {
   const res = await api('/api/push/test', 'POST');
   if (res.error) { toast(res.error); return; }
-  toast(`Test notification sent to ${res.sent || 1} ${plural(res.sent || 1, 'device')}.`);
+  const localShown = await showLocalTestNotification();
+  const attempted = Number(res.attempted || res.sent || 1);
+  const sent = Number(res.sent || 0);
+  const failed = Number(res.failed?.length || Math.max(0, attempted - sent));
+  const parts = [`Server push accepted for ${sent} of ${attempted} ${plural(attempted, 'device')}`];
+  if (failed) parts.push(`${failed} failed`);
+  parts.push(localShown ? 'local test shown' : 'local test not shown');
+  toast(parts.join('. ') + '.');
+}
+async function showLocalTestNotification() {
+  if (!pushState.available || Notification.permission !== 'granted') return false;
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    await registration.showNotification('BingeKeeper browser test', {
+      body: 'If you see this, this browser can display BingeKeeper notifications.',
+      icon: '/images/icons/icon-192.png',
+      badge: '/images/icons/icon-192.png',
+      tag: 'bingekeeper-local-test',
+      data: { url: '/' }
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 function urlBase64ToUint8Array(value) {
   const padding = '='.repeat((4 - value.length % 4) % 4);
