@@ -277,18 +277,32 @@ async function disablePushNotifications() {
 }
 async function sendTestPush() {
   const res = await api('/api/push/test', 'POST');
-  if (res.error) { toast(res.error); return; }
-  const localShown = await showLocalTestNotification();
+  if (res.error) { renderPushSettings(res.error); toast(res.error); return; }
+  const local = await showLocalTestNotification();
   const attempted = Number(res.attempted || res.sent || 1);
   const sent = Number(res.sent || 0);
   const failed = Number(res.failed?.length || Math.max(0, attempted - sent));
   const parts = [`Server push accepted for ${sent} of ${attempted} ${plural(attempted, 'device')}`];
   if (failed) parts.push(`${failed} failed`);
-  parts.push(localShown ? 'local test shown' : 'local test not shown');
-  toast(parts.join('. ') + '.');
+  parts.push(`permission: ${Notification.permission}`);
+  parts.push(`direct display: ${local.direct ? 'ok' : 'not shown'}`);
+  parts.push(`service worker display: ${local.serviceWorker ? 'ok' : 'not shown'}`);
+  const message = parts.join('. ') + '.';
+  renderPushSettings(message);
+  toast(sent ? 'Push test complete. Check the notification panel for details.' : message);
 }
 async function showLocalTestNotification() {
-  if (!pushState.available || Notification.permission !== 'granted') return false;
+  const result = { direct: false, serviceWorker: false };
+  if (!pushState.available || Notification.permission !== 'granted') return result;
+  try {
+    const notification = new Notification('BingeKeeper direct browser test', {
+      body: 'If you see this, Chrome can show BingeKeeper notifications from the page.',
+      icon: '/images/icons/icon-192.png',
+      tag: 'bingekeeper-direct-test'
+    });
+    result.direct = true;
+    setTimeout(() => notification.close(), 6000);
+  } catch {}
   try {
     const registration = await navigator.serviceWorker.ready;
     await registration.showNotification('BingeKeeper browser test', {
@@ -298,10 +312,9 @@ async function showLocalTestNotification() {
       tag: 'bingekeeper-local-test',
       data: { url: '/' }
     });
-    return true;
-  } catch {
-    return false;
-  }
+    result.serviceWorker = true;
+  } catch {}
+  return result;
 }
 function urlBase64ToUint8Array(value) {
   const padding = '='.repeat((4 - value.length % 4) % 4);
