@@ -214,7 +214,7 @@ function renderPushSettings(message = '') {
   }
 
   if (pushState.enabled) {
-    copy.textContent = message || 'Browser notifications are enabled on this device. Email reminders remain available as fallback.';
+    copy.textContent = message || notificationHelpText('Browser notifications are enabled on this device. Email reminders remain available as fallback.');
     actions.innerHTML = '<button class="btn-secondary" onclick="sendTestPush()">Send test</button><button class="btn-ghost" onclick="disablePushNotifications()">Disable</button>';
     return;
   }
@@ -287,9 +287,12 @@ async function sendTestPush() {
   parts.push(`permission: ${Notification.permission}`);
   parts.push(`direct display: ${local.direct ? 'ok' : 'not shown'}`);
   parts.push(`service worker display: ${local.serviceWorker ? 'ok' : 'not shown'}`);
-  const message = parts.join('. ') + '.';
+  const message = notificationHelpText(parts.join('. ') + '.');
   renderPushSettings(message);
   toast(sent ? 'Push test complete. Check the notification panel for details.' : message);
+}
+function notificationHelpText(message) {
+  return `${message} Not seeing alerts? Make sure Chrome notifications are enabled in your device settings.`;
 }
 async function showLocalTestNotification() {
   const result = { direct: false, serviceWorker: false };
