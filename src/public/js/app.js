@@ -38,6 +38,7 @@ let recommendationLoadToken = 0;
 let pendingAddShow = null;
 let activeTab = 'All';
 let adminSocialData = null;
+let adminAnalyticsData = null;
 let authConfig = { turnstileSiteKey: '' };
 let pushConfig = { supported: false, vapidPublicKey: '' };
 let pushState = { available: false, permission: 'default', enabled: false, endpoint: '' };
@@ -69,6 +70,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   } else if (route.name === 'reset' && route.token) { showReset(route.token);
   } else if (oauthResult.error) { showAuth(); showOAuthError(oauthResult.message);
   } else if (PUBLIC_PAGES[billingResult.slice(1)]) { showPublicPage(billingResult.slice(1));
+  } else if (window.location.pathname === '/admin/analytics') { showAdminAnalytics();
   } else if (window.location.pathname === '/admin/social') { showAdminSocial();
   } else if (token && currentUser) { showApp(billingResult === '#billing=success');
   } else { showAuth(); }
@@ -93,6 +95,7 @@ function showAuth() {
   document.getElementById('authPage').classList.remove('hidden');
   document.getElementById('appPage').classList.add('hidden');
   document.getElementById('publicPage').classList.add('hidden');
+  document.getElementById('adminAnalyticsPage').classList.add('hidden');
   document.getElementById('adminSocialPage').classList.add('hidden');
   showLogin(false);
 }
@@ -110,7 +113,7 @@ function scrollToHowItWorks() {
   document.getElementById('howItWorks')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 function startGoogleLogin() {
-  const returnTo = window.location.pathname === '/admin/social' ? '/admin/social' : '/';
+  const returnTo = window.location.pathname.startsWith('/admin/') ? window.location.pathname : '/';
   const ref = localStorage.getItem('bk_referral_code') || '';
   window.location.href = `/auth/google/start?returnTo=${encodeURIComponent(returnTo)}${ref ? `&ref=${encodeURIComponent(ref)}` : ''}`;
 }
@@ -391,6 +394,7 @@ async function doLogin() {
   if (res.error) { showError(errEl, res.error); return; }
   token = res.token; currentUser = res.user;
   localStorage.setItem('bk_token', token); localStorage.setItem('bk_user', JSON.stringify(currentUser));
+  if (window.location.pathname === '/admin/analytics') { showAdminAnalytics(); return; }
   if (window.location.pathname === '/admin/social') { showAdminSocial(); return; }
   showApp();
 }
@@ -445,9 +449,9 @@ async function verifyEmail(t) {
   if (res.error) { msg.style.color = '#ef4444'; msg.textContent = res.error;
   } else { msg.style.color = '#22c55e'; msg.textContent = res.message + ' Redirecting to login...'; setTimeout(() => { window.location.href = '/'; }, 2500); }
 }
-function doLogout() { token = null; currentUser = null; localStorage.removeItem('bk_token'); localStorage.removeItem('bk_user'); watchlist = []; dashboardRecommendations = []; dashboardRecommendationGroups = []; detailRecommendations = []; adminSocialData = null; pushState = { available: false, permission: 'default', enabled: false, endpoint: '' }; showAuth(); }
+function doLogout() { token = null; currentUser = null; localStorage.removeItem('bk_token'); localStorage.removeItem('bk_user'); watchlist = []; dashboardRecommendations = []; dashboardRecommendationGroups = []; detailRecommendations = []; adminSocialData = null; adminAnalyticsData = null; pushState = { available: false, permission: 'default', enabled: false, endpoint: '' }; showAuth(); }
 async function showApp(fromBilling = false) {
-  document.getElementById('authPage').classList.add('hidden'); document.getElementById('publicPage').classList.add('hidden'); document.getElementById('adminSocialPage').classList.add('hidden'); document.getElementById('appPage').classList.remove('hidden');
+  document.getElementById('authPage').classList.add('hidden'); document.getElementById('publicPage').classList.add('hidden'); document.getElementById('adminAnalyticsPage').classList.add('hidden'); document.getElementById('adminSocialPage').classList.add('hidden'); document.getElementById('appPage').classList.remove('hidden');
   await refreshCurrentUser();
   if (fromBilling) toast(currentUser?.plan === 'plus' ? 'Welcome to Plus!' : 'Plus is processing. Your account will update shortly.');
   if (fromBilling) window.history.replaceState(null, '', '/');
@@ -744,6 +748,7 @@ async function copyReferralLink() {
   await copyText(link, 'Referral link copied.');
 }
 function syncAdminUi() {
+  document.getElementById('adminAnalyticsBtn').classList.toggle('hidden', !currentUser?.is_admin);
   document.getElementById('adminSocialBtn').classList.toggle('hidden', !currentUser?.is_admin);
 }
 async function openBilling() {
@@ -760,10 +765,80 @@ function showPublicPage(page) {
   const content = PUBLIC_PAGES[page] || PUBLIC_PAGES.plus;
   document.getElementById('authPage').classList.add('hidden');
   document.getElementById('appPage').classList.add('hidden');
+  document.getElementById('adminAnalyticsPage').classList.add('hidden');
   document.getElementById('adminSocialPage').classList.add('hidden');
   document.getElementById('publicPage').classList.remove('hidden');
   document.getElementById('publicContent').innerHTML = `<p class="eyebrow">${content.eyebrow}</p><h1>${content.title}</h1>${content.body}`;
   window.history.replaceState(null, '', `#${page}`);
+}
+async function openAdminAnalytics() {
+  window.history.pushState(null, '', '/admin/analytics');
+  await showAdminAnalytics();
+}
+async function showAdminAnalytics() {
+  if (!token || !currentUser) {
+    showAuth();
+    toast('Sign in with an admin account.');
+    return;
+  }
+
+  document.getElementById('authPage').classList.add('hidden');
+  document.getElementById('publicPage').classList.add('hidden');
+  document.getElementById('appPage').classList.add('hidden');
+  document.getElementById('adminSocialPage').classList.add('hidden');
+  document.getElementById('adminAnalyticsPage').classList.remove('hidden');
+  document.getElementById('adminAnalyticsError').classList.add('hidden');
+  document.getElementById('adminAnalyticsStatus').classList.remove('hidden');
+  document.getElementById('adminAnalyticsStatus').textContent = 'Loading analytics...';
+
+  await refreshCurrentUser();
+  if (!currentUser?.is_admin) {
+    document.getElementById('adminAnalyticsPage').classList.add('hidden');
+    showApp();
+    toast('Admin access required.');
+    return;
+  }
+
+  document.getElementById('adminAnalyticsHeaderName').textContent = currentUser.name;
+  await loadAdminAnalytics();
+}
+async function loadAdminAnalytics() {
+  document.getElementById('adminAnalyticsError').classList.add('hidden');
+  document.getElementById('adminAnalyticsStatus').classList.remove('hidden');
+  document.getElementById('adminAnalyticsStatus').textContent = 'Loading analytics...';
+
+  const res = await api('/api/admin/analytics', 'GET');
+  if (res.error) {
+    document.getElementById('adminAnalyticsStatus').classList.add('hidden');
+    showError(document.getElementById('adminAnalyticsError'), res.error);
+    if (res.error.includes('Admin')) setTimeout(() => showApp(), 1200);
+    return;
+  }
+
+  adminAnalyticsData = res;
+  renderAdminAnalytics();
+  document.getElementById('adminAnalyticsStatus').classList.add('hidden');
+}
+function renderAdminAnalytics() {
+  const metrics = adminAnalyticsData?.metrics || {};
+  const cards = [
+    ['Total registered users', metrics.total_users, 'All accounts created in BingeKeeper.'],
+    ['New users today', metrics.new_users_today, 'Accounts created since the start of today.'],
+    ['Total watchlists', metrics.total_watchlists, 'Total user-show watchlist entries.'],
+    ['Total tracked shows', metrics.total_tracked_shows, 'Unique shows tracked by at least one user.'],
+    ['Average shows per user', metrics.average_shows_per_user, 'Watchlist entries divided by total users.'],
+    ['Plus subscribers', metrics.plus_subscribers, 'Users on Plus or with an active subscription.']
+  ];
+  document.getElementById('adminAnalyticsGrid').innerHTML = cards
+    .map(([label, value, helper]) => adminAnalyticsCard(label, value, helper))
+    .join('');
+}
+function adminAnalyticsCard(label, value, helper) {
+  return `<article class="admin-analytics-card">
+    <span>${esc(label)}</span>
+    <strong>${formatMetric(value)}</strong>
+    <p>${esc(helper)}</p>
+  </article>`;
 }
 async function openAdminSocial() {
   window.history.pushState(null, '', '/admin/social');
@@ -779,6 +854,7 @@ async function showAdminSocial() {
   document.getElementById('authPage').classList.add('hidden');
   document.getElementById('publicPage').classList.add('hidden');
   document.getElementById('appPage').classList.add('hidden');
+  document.getElementById('adminAnalyticsPage').classList.add('hidden');
   document.getElementById('adminSocialPage').classList.remove('hidden');
   document.getElementById('adminSocialError').classList.add('hidden');
   document.getElementById('adminSocialStatus').classList.remove('hidden');
@@ -972,6 +1048,10 @@ function todayString() { return new Date().toISOString().slice(0,10); }
 function plural(count, word) { return count === 1 ? word : `${word}s`; }
 function formatAirDate(date) {
   return new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+function formatMetric(value) {
+  if (typeof value === 'number') return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+  return Number(value || 0).toLocaleString();
 }
 function daysUntilLabel(date) {
   const now = new Date(`${todayString()}T00:00:00`);

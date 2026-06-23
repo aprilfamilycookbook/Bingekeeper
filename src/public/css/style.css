@@ -758,6 +758,45 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.5rem; }
   margin-top: 0;
 }
 
+.admin-analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.admin-analytics-card {
+  min-height: 150px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(108,99,255,0.14), rgba(51,214,199,0.05)), var(--bg2);
+  box-shadow: var(--shadow);
+}
+
+.admin-analytics-card span,
+.admin-analytics-card p {
+  color: var(--text2);
+}
+
+.admin-analytics-card span {
+  display: block;
+  font-size: 13px;
+}
+
+.admin-analytics-card strong {
+  display: block;
+  margin: 12px 0 8px;
+  color: var(--text);
+  font-size: 38px;
+  line-height: 1;
+}
+
+.admin-analytics-card p {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .empty-state.compact {
   min-height: 180px;
   grid-column: 1 / -1;
@@ -1534,7 +1573,10 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); c
   .auth-preview { grid-template-columns: 1fr; }
   .dashboard-hero { grid-template-columns: 1fr; padding: 18px; }
   .admin-social-hero .btn-primary { justify-self: stretch; }
+  .admin-social-hero .btn-secondary { width: 100%; }
   .admin-social-grid { grid-template-columns: 1fr; }
+  .admin-analytics-grid { grid-template-columns: 1fr; }
+  .admin-analytics-card { min-height: 0; }
   .admin-social-card { grid-template-columns: 72px minmax(0, 1fr); }
   .admin-social-card img,
   .admin-social-poster { width: 72px; height: 108px; }

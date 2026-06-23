@@ -41,6 +41,34 @@ export async function handleAdmin(request, env, path) {
     return jsonResponse({ user: { id: admin.id, email: admin.email, name: admin.name, is_admin: true } });
   }
 
+  if (path === '/api/admin/analytics' && request.method === 'GET') {
+    const [
+      totalUsers,
+      newUsersToday,
+      totalWatchlists,
+      totalTrackedShows,
+      plusSubscribers
+    ] = await Promise.all([
+      countQuery(env, 'SELECT COUNT(*) AS total FROM users'),
+      countQuery(env, "SELECT COUNT(*) AS total FROM users WHERE created_at >= unixepoch('now', 'start of day')"),
+      countQuery(env, 'SELECT COUNT(*) AS total FROM watchlist'),
+      countQuery(env, 'SELECT COUNT(DISTINCT show_id) AS total FROM watchlist'),
+      countQuery(env, "SELECT COUNT(*) AS total FROM users WHERE COALESCE(plan, 'free') = 'plus' OR subscription_status = 'active'")
+    ]);
+
+    return jsonResponse({
+      generated_at: new Date().toISOString(),
+      metrics: {
+        total_users: totalUsers,
+        new_users_today: newUsersToday,
+        total_watchlists: totalWatchlists,
+        total_tracked_shows: totalTrackedShows,
+        average_shows_per_user: totalUsers ? Number((totalWatchlists / totalUsers).toFixed(1)) : 0,
+        plus_subscribers: plusSubscribers
+      }
+    });
+  }
+
   if (path === '/api/admin/social' && request.method === 'GET') {
     const today = new Date().toISOString().slice(0, 10);
     const weekEnd = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
@@ -76,6 +104,11 @@ export async function handleAdmin(request, env, path) {
   }
 
   return jsonResponse({ error: 'Not found' }, 404);
+}
+
+async function countQuery(env, sql) {
+  const row = await env.DB.prepare(sql).first();
+  return Number(row?.total || 0);
 }
 
 async function getTrackedShowMeta(env) {

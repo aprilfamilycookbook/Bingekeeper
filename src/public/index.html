@@ -182,6 +182,7 @@
         <div class="header-right">
           <span id="planBadge" class="plan-badge">Free</span>
           <button class="btn-ghost hidden" id="installAppBtnHeader" onclick="installApp()">Install</button>
+          <button class="btn-ghost hidden" id="adminAnalyticsBtn" onclick="openAdminAnalytics()">Analytics</button>
           <button class="btn-ghost hidden" id="adminSocialBtn" onclick="openAdminSocial()">Social</button>
           <button class="btn-ghost" id="billingBtn" onclick="openBilling()">Upgrade</button>
           <button class="btn-ghost" onclick="openAccount()">Account</button>
@@ -270,6 +271,37 @@
     </main>
   </div>
 
+  <div id="adminAnalyticsPage" class="hidden">
+    <header>
+      <div class="header-inner">
+        <div class="logo">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>
+          <span>BingeKeeper</span>
+        </div>
+        <div class="header-right">
+          <button class="btn-ghost" onclick="showApp()">Dashboard</button>
+          <button class="btn-ghost" onclick="openAdminSocial()">Social</button>
+          <span id="adminAnalyticsHeaderName" class="header-name"></span>
+          <button class="btn-ghost" onclick="doLogout()">Sign out</button>
+        </div>
+      </div>
+    </header>
+    <main class="admin-social-main">
+      <section class="dashboard-hero admin-social-hero">
+        <div>
+          <p class="eyebrow">Admin tools</p>
+          <h1>Analytics dashboard</h1>
+          <p>Quick health metrics for BingeKeeper accounts, watchlists, and Plus subscriptions.</p>
+        </div>
+        <button class="btn-secondary" onclick="loadAdminAnalytics()">Refresh</button>
+      </section>
+
+      <div id="adminAnalyticsError" class="form-error hidden"></div>
+      <div id="adminAnalyticsStatus" class="search-msg">Loading analytics...</div>
+      <div class="admin-analytics-grid" id="adminAnalyticsGrid"></div>
+    </main>
+  </div>
+
   <div id="adminSocialPage" class="hidden">
     <header>
       <div class="header-inner">
@@ -279,6 +311,7 @@
         </div>
         <div class="header-right">
           <button class="btn-ghost" onclick="showApp()">Dashboard</button>
+          <button class="btn-ghost" onclick="openAdminAnalytics()">Analytics</button>
           <span id="adminHeaderName" class="header-name"></span>
           <button class="btn-ghost" onclick="doLogout()">Sign out</button>
         </div>
@@ -361,6 +394,6 @@
 
   <div id="toast" class="toast hidden"></div>
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
-  <script src="/js/app.js?v=push-help-v1"></script>
+  <script src="/js/app.js?v=admin-analytics-v1"></script>
 </body>
 </html>
