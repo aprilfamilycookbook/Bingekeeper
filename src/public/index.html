@@ -196,55 +196,17 @@
         <div>
           <p class="eyebrow">Your watch queue</p>
           <h1 id="dashboardGreeting">Tonight's lineup</h1>
-          <p id="dashboardSubcopy">Search for shows, track where you watch them, and let Bingekeeper watch the calendar.</p>
+          <p id="dashboardSubcopy">Search for shows, track where you watch them, and let BingeKeeper watch the calendar.</p>
         </div>
         <div class="stats-grid" id="statsGrid"></div>
       </section>
       <section class="plus-banner hidden" id="plusBanner">
         <div>
-          <p class="eyebrow">Bingekeeper Plus</p>
+          <p class="eyebrow">BingeKeeper Plus</p>
           <h2>Unlimited show tracking</h2>
           <p>Free accounts can track 10 shows. Upgrade when your queue gets serious.</p>
         </div>
         <button class="btn-primary" onclick="openBilling()">Upgrade to Plus</button>
-      </section>
-      <section class="push-settings hidden" id="pushSettingsSection">
-        <div>
-          <p class="eyebrow">Notifications</p>
-          <h2>Episode alerts on this device</h2>
-          <p id="pushSettingsCopy">Turn on browser notifications to get release alerts when BingeKeeper finds new episodes or seasons.</p>
-        </div>
-        <div class="push-actions" id="pushSettingsActions"></div>
-        <div class="push-diagnostics hidden" id="pushDiagnostics"></div>
-      </section>
-      <section class="referral-card hidden" id="referralSection">
-        <div>
-          <p class="eyebrow">Invite friends</p>
-          <h2>Get 5 extra free show slots</h2>
-          <p id="referralCopy">Share your invite link. When a friend joins and adds their first show, you both get 5 extra slots, up to 25 free shows.</p>
-        </div>
-        <div class="referral-actions">
-          <input type="text" id="referralLink" readonly aria-label="Referral link">
-          <button class="btn-secondary" onclick="copyReferralLink()">Copy link</button>
-        </div>
-      </section>
-      <section class="upcoming-section hidden" id="upcomingSection">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Next up</p>
-            <h2>Upcoming episodes</h2>
-          </div>
-        </div>
-        <div class="upcoming-list" id="upcomingList"></div>
-      </section>
-      <section class="recommendations-section hidden" id="dashboardRecommendationsSection">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Discover</p>
-            <h2>You May Also Like</h2>
-          </div>
-        </div>
-        <div class="recommendation-grid" id="dashboardRecommendations"></div>
       </section>
       <div class="search-section">
         <div class="section-heading">
@@ -263,6 +225,44 @@
         <div class="tabs" id="tabs"></div>
         <div id="watchlistGrid" class="watchlist-grid"></div>
       </div>
+      <section class="upcoming-section hidden" id="upcomingSection">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Next up</p>
+            <h2>Upcoming episodes</h2>
+          </div>
+        </div>
+        <div class="upcoming-list" id="upcomingList"></div>
+      </section>
+      <section class="push-settings hidden" id="pushSettingsSection">
+        <div>
+          <p class="eyebrow">Notifications</p>
+          <h2>Device reminders</h2>
+          <p id="pushSettingsCopy">Turn on notifications for this device when BingeKeeper finds new episodes or seasons.</p>
+        </div>
+        <div class="push-actions" id="pushSettingsActions"></div>
+        <div class="push-diagnostics hidden" id="pushDiagnostics"></div>
+      </section>
+      <section class="referral-card hidden" id="referralSection">
+        <div>
+          <p class="eyebrow">Invite friends</p>
+          <h2>Get 5 extra free show slots</h2>
+          <p id="referralCopy">Share your invite link. When a friend joins and adds their first show, you both get 5 extra slots, up to 25 free shows.</p>
+        </div>
+        <div class="referral-actions">
+          <input type="text" id="referralLink" readonly aria-label="Referral link">
+          <button class="btn-secondary" onclick="copyReferralLink()">Copy link</button>
+        </div>
+      </section>
+      <section class="recommendations-section hidden" id="dashboardRecommendationsSection">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Discover</p>
+            <h2>You May Also Like</h2>
+          </div>
+        </div>
+        <div class="recommendation-grid" id="dashboardRecommendations"></div>
+      </section>
       <footer class="app-footer">
         <a href="#plus" onclick="showPublicPage('plus')">Plus</a>
         <a href="#support" onclick="showPublicPage('support')">Support</a>
@@ -395,6 +395,6 @@
 
   <div id="toast" class="toast hidden"></div>
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
-  <script src="/js/app.js?v=push-diagnostics-v1"></script>
+  <script src="/js/app.js?v=ux-polish-v1"></script>
 </body>
 </html>

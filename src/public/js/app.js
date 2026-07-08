@@ -6,7 +6,7 @@ const NOTIFY_OPTIONS = [['two_days','2 days before'],['day_before','1 day before
 const STATUS_BADGE = { 'Watching':'b-watching','Plan to Watch':'b-plan','Completed':'b-completed','On Hold':'b-hold','Dropped':'b-dropped' };
 const PUBLIC_PAGES = {
   plus: {
-    title: 'Bingekeeper Plus',
+    title: 'BingeKeeper Plus',
     eyebrow: 'Pricing',
     body: `<p>Track the shows you care about, remember where you watch them, and get a clean view of upcoming episodes.</p><div class="pricing-grid"><div><h3>Free</h3><strong>$0</strong><p>Track up to 10 shows to start. Invite friends to earn 5 extra free show slots per successful referral, up to 25 total.</p></div><div class="featured"><h3>Plus</h3><strong>Monthly</strong><p>Unlimited show tracking and self-service billing through Stripe. The final price is shown securely at checkout.</p><button class="btn-primary" onclick="openBillingFromPublic()">Upgrade to Plus</button></div></div>`
   },
@@ -18,12 +18,12 @@ const PUBLIC_PAGES = {
   privacy: {
     title: 'Privacy Policy',
     eyebrow: 'Effective June 12, 2026',
-    body: `<p>Bingekeeper stores the account details needed to run the service: your name, email address, password hash, verification status, subscription status, and watchlist data.</p><p>Payments are handled by Stripe. Bingekeeper does not store full card numbers. Email delivery is handled by Resend, and show data comes from TMDB.</p><p>Your data is used to provide account access, email verification, password resets, episode reminders, watchlist features, and billing status. To request help or deletion, contact <a href="mailto:hello@bingekeeper.tv">hello@bingekeeper.tv</a>.</p>`
+    body: `<p>BingeKeeper stores the account details needed to run the service: your name, email address, password hash, verification status, subscription status, and watchlist data.</p><p>Payments are handled by Stripe. BingeKeeper does not store full card numbers. Email delivery is handled by Resend, and show data comes from TMDB.</p><p>Your data is used to provide account access, email verification, password resets, episode reminders, watchlist features, and billing status. To request help or deletion, contact <a href="mailto:hello@bingekeeper.tv">hello@bingekeeper.tv</a>.</p>`
   },
   terms: {
     title: 'Terms of Service',
     eyebrow: 'Effective June 12, 2026',
-    body: `<p>Bingekeeper is provided as a show-tracking tool. You are responsible for keeping your login information secure and for using the service lawfully.</p><p>Plus subscriptions are billed through Stripe and can be managed from the app. Free accounts start at 10 tracked shows and may earn referral bonuses up to 25 tracked shows.</p><p>Bingekeeper depends on third-party services for payments, email, hosting, and show metadata. The service may change as those services or the product evolve.</p>`
+    body: `<p>BingeKeeper is provided as a show-tracking tool. You are responsible for keeping your login information secure and for using the service lawfully.</p><p>Plus subscriptions are billed through Stripe and can be managed from the app. Free accounts start at 10 tracked shows and may earn referral bonuses up to 25 tracked shows.</p><p>BingeKeeper depends on third-party services for payments, email, hosting, and show metadata. The service may change as those services or the product evolve.</p>`
   }
 };
 
@@ -219,12 +219,12 @@ function renderPushSettings(message = '') {
 
   if (pushState.enabled) {
     copy.textContent = message || notificationHelpText('Browser notifications are enabled on this device. Email reminders remain available as fallback.');
-    actions.innerHTML = '<button class="btn-secondary" onclick="sendTestPush()">Send encrypted test</button><button class="btn-secondary" onclick="resetPushNotifications()">Reset this device</button><button class="btn-ghost" onclick="loadPushDiagnostics()">Diagnostics</button><button class="btn-ghost" onclick="disablePushNotifications()">Disable</button>';
+    actions.innerHTML = '<button class="btn-secondary" onclick="sendTestPush()">Send test</button><button class="btn-ghost" onclick="resetPushNotifications()">Fix notifications</button><button class="btn-ghost" onclick="loadPushDiagnostics()">Advanced details</button><button class="btn-ghost" onclick="disablePushNotifications()">Turn off</button>';
     return;
   }
 
   copy.textContent = message || 'Turn on browser notifications to get alerts on this device when tracked shows have new episodes or seasons.';
-  actions.innerHTML = '<button class="btn-primary" onclick="enablePushNotifications()">Enable notifications</button><button class="btn-ghost" onclick="loadPushDiagnostics()">Diagnostics</button>';
+  actions.innerHTML = '<button class="btn-primary" onclick="enablePushNotifications()">Turn on notifications</button><button class="btn-ghost" onclick="loadPushDiagnostics()">Advanced details</button>';
 }
 async function enablePushNotifications() {
   if (!pushState.available || !pushConfig.supported) {
@@ -322,8 +322,8 @@ async function resetPushNotifications() {
       toast(test.error);
       return;
     }
-    renderPushSettings('Notifications were reset and an encrypted test push was accepted by the push service.');
-    toast('Notifications reset. Watch for the test notification.');
+    renderPushSettings('Notifications were refreshed on this device. Watch for the test notification.');
+    toast('Notifications refreshed.');
   } catch {
     renderPushSettings('Could not reset notifications. Reload BingeKeeper and try again.');
   }
@@ -358,7 +358,7 @@ async function sendTestPush() {
   const message = notificationHelpText(parts.join('. ') + '.');
   renderPushSettings(message);
   await loadPushDiagnostics(false);
-  toast(sent ? 'Push test complete. Check the notification panel for details.' : message);
+  toast(sent ? 'Test notification sent.' : message);
 }
 async function loadPushDiagnostics(showToast = true) {
   const el = document.getElementById('pushDiagnostics');
@@ -700,8 +700,8 @@ function render() {
   document.getElementById('tabs').innerHTML = allTabs.map(t => { const cnt = t==='All'?watchlist.length:watchlist.filter(s => s.status===t).length; return `<button class="tab${activeTab===t?' active':''}" onclick="setTab('${t}')">${t}<span class="tab-count">${cnt}</span></button>`; }).join('');
   const list = activeTab==='All'?watchlist:watchlist.filter(s => s.status===activeTab);
   const grid = document.getElementById('watchlistGrid');
-  if (!list.length) { grid.innerHTML = `<div class="empty-state"><span class="empty-icon">TV</span><h3>${watchlist.length===0?'Build your first watchlist':'Nothing here yet'}</h3><p>${watchlist.length===0?'Search for a show above, add where you watch it, and Bingekeeper will keep an eye on new episodes.':'Try another status tab or add a show to this category.'}</p><button class="btn-primary" onclick="document.getElementById('searchInput').focus()">Start searching</button></div>`; return; }
-  grid.innerHTML = list.map((s,i) => { const idx=watchlist.indexOf(s); const hasUpcoming=s.next_episode_date&&s.next_episode_date>=todayString(); const nextLabel=s.next_episode_date?`S${s.next_season_number}E${s.next_episode_number} - ${formatAirDate(s.next_episode_date)}`:null; return `<div class="show-card">${s.poster_path?`<img class="show-poster clickable" src="https://image.tmdb.org/t/p/w185${s.poster_path}" alt="${esc(s.name)}" loading="lazy" onclick="openShowDetail(${idx})">`:`<div class="show-poster-ph clickable" onclick="openShowDetail(${idx})">TV</div>`}${hasUpcoming?`<div class="upcoming-badge">${daysUntilLabel(s.next_episode_date)}</div>`:''}<div class="show-body"><button class="show-title title-button" title="${esc(s.name)}" onclick="openShowDetail(${idx})">${esc(s.name)}</button><div class="show-badges"><span class="badge ${STATUS_BADGE[s.status]||'b-watching'}">${s.status}</span><span class="badge b-service">${esc(s.service)}</span></div><div class="show-progress">Season ${s.current_season || 1}, episode ${s.current_episode || 1}</div>${nextLabel?`<div class="show-next">${nextLabel}</div>`:''}<div class="show-actions"><button class="btn-sm" onclick="incrementEpisode(${idx})">+ Episode</button><button class="btn-sm" onclick="nextSeason(${idx})">Next season</button><button class="btn-sm" onclick="openEdit(${idx})">Edit</button><button class="btn-sm btn-sm-danger" onclick="removeShow(${idx})">Remove</button></div></div></div>`; }).join('');
+  if (!list.length) { grid.innerHTML = `<div class="empty-state"><span class="empty-icon">TV</span><h3>${watchlist.length===0?'Build your first watchlist':'Nothing here yet'}</h3><p>${watchlist.length===0?'Search for a show above, add where you watch it, and BingeKeeper will keep an eye on new episodes.':'Try another status tab or add a show to this category.'}</p><button class="btn-primary" onclick="document.getElementById('searchInput').focus()">Start searching</button></div>`; return; }
+  grid.innerHTML = list.map((s,i) => { const idx=watchlist.indexOf(s); const hasUpcoming=s.next_episode_date&&s.next_episode_date>=todayString(); const nextLabel=s.next_episode_date?`S${s.next_season_number}E${s.next_episode_number} - ${formatAirDate(s.next_episode_date)}`:null; return `<div class="show-card">${s.poster_path?`<img class="show-poster clickable" src="https://image.tmdb.org/t/p/w185${s.poster_path}" alt="${esc(s.name)}" loading="lazy" onclick="openShowDetail(${idx})">`:`<div class="show-poster-ph clickable" onclick="openShowDetail(${idx})">TV</div>`}${hasUpcoming?`<div class="upcoming-badge">${daysUntilLabel(s.next_episode_date)}</div>`:''}<div class="show-body"><button class="show-title title-button" title="${esc(s.name)}" onclick="openShowDetail(${idx})">${esc(s.name)}</button><div class="show-badges"><span class="badge ${STATUS_BADGE[s.status]||'b-watching'}">${s.status}</span><span class="badge b-service">${esc(s.service)}</span></div><div class="show-progress">Season ${s.current_season || 1}, episode ${s.current_episode || 1}</div>${nextLabel?`<div class="show-next">${nextLabel}</div>`:''}<div class="show-actions"><button class="btn-sm btn-sm-primary" onclick="incrementEpisode(${idx})">+ Episode</button><button class="btn-sm" onclick="nextSeason(${idx})">Next season</button><button class="btn-sm" onclick="openEdit(${idx})">Edit</button><button class="btn-sm btn-sm-danger" onclick="removeShow(${idx})">Remove</button></div></div></div>`; }).join('');
 }
 function renderDashboard() {
   const watching = watchlist.filter(s => s.status === 'Watching').length;
@@ -712,7 +712,7 @@ function renderDashboard() {
   document.querySelector('#plusBanner p:not(.eyebrow)').textContent = `Free accounts can track ${freeLimit} shows${freeLimit < 25 ? ', with referral bonuses up to 25' : ''}. Upgrade when your queue gets serious.`;
   renderReferralCard();
   document.getElementById('dashboardGreeting').textContent = watchlist.length ? `Welcome back, ${currentUser.name}` : 'Start your watchlist';
-  document.getElementById('dashboardSubcopy').textContent = watchlist.length ? `${watching} ${plural(watching, 'show')} in progress. ${upcoming.length} upcoming ${plural(upcoming.length, 'episode')} on the radar.` : 'Add a few shows and this page becomes your personal release calendar.';
+  document.getElementById('dashboardSubcopy').textContent = watchlist.length ? `${watching} ${plural(watching, 'show')} in progress. ${upcoming.length} upcoming ${plural(upcoming.length, 'episode')} on the radar.` : 'Search for a show below to start your personal release calendar.';
   document.getElementById('statsGrid').innerHTML = [
     ['Total', watchlist.length],
     ['Watching', watching],
@@ -1108,8 +1108,8 @@ function accountPushHtml() {
 function accountPushActionsHtml() {
   if (!pushState.available || !pushConfig.supported || pushState.permission === 'denied') return '';
   if (isIos() && !isStandaloneApp()) return '<button class="btn-cancel" onclick="installApp()">Install app for iOS notifications</button>';
-  if (pushState.enabled) return '<button class="btn-cancel" onclick="sendTestPush()">Send test notification</button><button class="btn-cancel" onclick="resetPushNotifications().then(openAccount)">Reset notifications on this device</button><button class="btn-cancel" onclick="disablePushNotifications().then(openAccount)">Disable notifications</button>';
-  return '<button class="btn-save" onclick="enablePushNotifications().then(openAccount)">Enable notifications</button>';
+  if (pushState.enabled) return '<button class="btn-cancel" onclick="sendTestPush()">Send test notification</button><button class="btn-cancel" onclick="resetPushNotifications().then(openAccount)">Fix notifications on this device</button><button class="btn-cancel" onclick="disablePushNotifications().then(openAccount)">Turn off notifications</button>';
+  return '<button class="btn-save" onclick="enablePushNotifications().then(openAccount)">Turn on notifications</button>';
 }
 function accountReferralHtml() {
   if (!currentUser?.referral_code) return '';
@@ -1124,7 +1124,7 @@ function openAccount() {
   openModal();
 }
 async function deleteAccount() {
-  const phrase = prompt('Type DELETE to permanently delete your Bingekeeper account.');
+  const phrase = prompt('Type DELETE to permanently delete your BingeKeeper account.');
   if (phrase !== 'DELETE') return;
   const res = await api('/api/auth/account', 'DELETE');
   if (res.error) { toast(res.error); return; }

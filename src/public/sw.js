@@ -1,10 +1,10 @@
-const SW_VERSION = 'bingekeeper-sw-v9';
-const CACHE_NAME = 'bingekeeper-pwa-v9';
+const SW_VERSION = 'bingekeeper-sw-v10';
+const CACHE_NAME = 'bingekeeper-pwa-v10';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/css/style.css',
-  '/js/app.js?v=push-diagnostics-v1',
+  '/js/app.js?v=ux-polish-v1',
   '/manifest.webmanifest',
   '/images/logo.png',
   '/images/dashboard-preview.png',
