@@ -1,5 +1,7 @@
 import { verifyJWT } from './auth.js';
 
+const EXPECTED_SERVICE_WORKER_VERSION = 'bingekeeper-sw-v9';
+
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 }
@@ -17,11 +19,13 @@ export async function handlePush(request, env, path) {
   if (path === '/api/push/config' && request.method === 'GET') {
     return jsonResponse({
       supported: Boolean(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY),
-      vapidPublicKey: env.VAPID_PUBLIC_KEY || ''
+      vapidPublicKey: env.VAPID_PUBLIC_KEY || '',
+      expectedServiceWorkerVersion: EXPECTED_SERVICE_WORKER_VERSION
     });
   }
 
   if (path === '/api/push/subscribe' && request.method === 'POST') {
+    await ensurePushDiagnosticsColumns(env);
     const { subscription } = await request.json().catch(() => ({}));
     if (!isValidSubscription(subscription)) return jsonResponse({ error: 'Invalid push subscription' }, 400);
     await saveSubscription(env, user.userId, subscription, request.headers.get('User-Agent') || '');
@@ -29,6 +33,7 @@ export async function handlePush(request, env, path) {
   }
 
   if (path === '/api/push/subscribe' && request.method === 'DELETE') {
+    await ensurePushDiagnosticsColumns(env);
     const { endpoint } = await request.json().catch(() => ({}));
     if (endpoint) {
       await env.DB.prepare('UPDATE push_subscriptions SET enabled = 0, updated_at = unixepoch() WHERE user_id = ? AND endpoint = ?').bind(user.userId, endpoint).run();
@@ -39,11 +44,12 @@ export async function handlePush(request, env, path) {
   }
 
   if (path === '/api/push/test' && request.method === 'POST') {
+    await ensurePushDiagnosticsColumns(env);
     const result = await sendPushToUser(env, user.userId, {
       title: 'BingeKeeper notifications are on',
       body: 'You will get alerts when tracked shows have new episodes or seasons.',
       url: '/'
-    }, { noPayload: true });
+    });
     if (!result.sent) return jsonResponse({ error: result.error || 'No active push subscriptions found' }, 400);
     return jsonResponse({
       message: 'Test notification sent',
@@ -53,12 +59,40 @@ export async function handlePush(request, env, path) {
     });
   }
 
+  if (path === '/api/push/diagnostics' && request.method === 'GET') {
+    await ensurePushDiagnosticsColumns(env);
+    const rows = await env.DB.prepare(`
+      SELECT endpoint, enabled, last_success_at, last_failure_at, last_failure_status, last_failure_reason
+      FROM push_subscriptions
+      WHERE user_id = ?
+      ORDER BY updated_at DESC
+    `).bind(user.userId).all();
+    const subscriptions = rows.results || [];
+    const activeSubscriptions = subscriptions.filter(sub => Number(sub.enabled) === 1);
+    const lastFailure = subscriptions
+      .filter(sub => sub.last_failure_at)
+      .sort((a, b) => Number(b.last_failure_at || 0) - Number(a.last_failure_at || 0))[0] || null;
+
+    return jsonResponse({
+      vapid_public_key_exists: Boolean(env.VAPID_PUBLIC_KEY),
+      vapid_private_key_exists: Boolean(env.VAPID_PRIVATE_KEY),
+      vapid_subject_exists: Boolean(env.VAPID_SUBJECT),
+      active_subscription_count: activeSubscriptions.length,
+      endpoint_origins: [...new Set(activeSubscriptions.map(sub => endpointOrigin(sub.endpoint)).filter(Boolean))],
+      last_failure_status: lastFailure?.last_failure_status || null,
+      last_failure_reason: lastFailure?.last_failure_reason || null,
+      last_failure_at: lastFailure?.last_failure_at || null,
+      expected_service_worker_version: EXPECTED_SERVICE_WORKER_VERSION
+    });
+  }
+
   return jsonResponse({ error: 'Not found' }, 404);
 }
 
 export async function sendPushToUser(env, userId, payload, options = {}) {
   if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY) return { sent: 0, error: 'Push is not configured' };
 
+  await ensurePushDiagnosticsColumns(env);
   const rows = await env.DB.prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ? AND enabled = 1').bind(userId).all();
   let sent = 0;
   const failed = [];
@@ -71,11 +105,15 @@ export async function sendPushToUser(env, userId, payload, options = {}) {
 
     if (result.ok) {
       sent++;
+      await recordPushSuccess(env, sub.id);
     } else if ([404, 410].includes(result.status)) {
-      await env.DB.prepare('UPDATE push_subscriptions SET enabled = 0, updated_at = unixepoch() WHERE id = ?').bind(sub.id).run();
-      failed.push({ status: result.status, reason: 'Expired browser subscription' });
+      const reason = 'Expired browser subscription';
+      await recordPushFailure(env, sub.id, result.status, reason, true);
+      failed.push({ endpoint_origin: endpointOrigin(sub.endpoint), status: result.status, reason });
     } else {
-      failed.push({ status: result.status || 0, reason: result.error || result.body || 'Push service rejected the notification' });
+      const reason = String(result.error?.message || result.error || result.body || 'Push service rejected the notification').slice(0, 220);
+      await recordPushFailure(env, sub.id, result.status || 0, reason, false);
+      failed.push({ endpoint_origin: endpointOrigin(sub.endpoint), status: result.status || 0, reason });
     }
   }
   const error = sent ? '' : pushFailureMessage(failed, subscriptions.length);
@@ -84,14 +122,16 @@ export async function sendPushToUser(env, userId, payload, options = {}) {
 
 async function saveSubscription(env, userId, subscription, userAgent) {
   await env.DB.prepare(`
-    INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, user_agent, enabled, updated_at)
-    VALUES (?, ?, ?, ?, ?, 1, unixepoch())
+    INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, user_agent, enabled, last_failure_status, last_failure_reason, updated_at)
+    VALUES (?, ?, ?, ?, ?, 1, NULL, NULL, unixepoch())
     ON CONFLICT(endpoint) DO UPDATE SET
       user_id = excluded.user_id,
       p256dh = excluded.p256dh,
       auth = excluded.auth,
       user_agent = excluded.user_agent,
       enabled = 1,
+      last_failure_status = NULL,
+      last_failure_reason = NULL,
       updated_at = unixepoch()
   `).bind(userId, subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth, userAgent).run();
 }
@@ -120,6 +160,52 @@ async function sendWebPush(env, subscription, payload, options = {}) {
   });
   const responseBody = response.ok ? '' : await response.text().catch(() => '');
   return { ok: response.ok, status: response.status, body: responseBody.slice(0, 220) };
+}
+
+async function recordPushSuccess(env, subscriptionId) {
+  await env.DB.prepare(`
+    UPDATE push_subscriptions
+    SET last_success_at = unixepoch(),
+        last_failure_status = NULL,
+        last_failure_reason = NULL,
+        updated_at = unixepoch()
+    WHERE id = ?
+  `).bind(subscriptionId).run();
+}
+
+async function recordPushFailure(env, subscriptionId, status, reason, disable) {
+  await env.DB.prepare(`
+    UPDATE push_subscriptions
+    SET enabled = CASE WHEN ? THEN 0 ELSE enabled END,
+        last_failure_at = unixepoch(),
+        last_failure_status = ?,
+        last_failure_reason = ?,
+        updated_at = unixepoch()
+    WHERE id = ?
+  `).bind(disable ? 1 : 0, Number(status || 0), String(reason || '').slice(0, 220), subscriptionId).run();
+}
+
+async function ensurePushDiagnosticsColumns(env) {
+  const columns = await env.DB.prepare('PRAGMA table_info(push_subscriptions)').all();
+  const existing = new Set((columns.results || []).map(column => column.name));
+  const missing = [
+    ['last_success_at', 'ALTER TABLE push_subscriptions ADD COLUMN last_success_at INTEGER'],
+    ['last_failure_at', 'ALTER TABLE push_subscriptions ADD COLUMN last_failure_at INTEGER'],
+    ['last_failure_status', 'ALTER TABLE push_subscriptions ADD COLUMN last_failure_status INTEGER'],
+    ['last_failure_reason', 'ALTER TABLE push_subscriptions ADD COLUMN last_failure_reason TEXT']
+  ].filter(([name]) => !existing.has(name));
+
+  for (const [, sql] of missing) {
+    await env.DB.prepare(sql).run().catch(() => null);
+  }
+}
+
+function endpointOrigin(endpoint) {
+  try {
+    return new URL(endpoint).origin;
+  } catch {
+    return '';
+  }
 }
 
 function pushFailureMessage(failed, subscriptionCount) {

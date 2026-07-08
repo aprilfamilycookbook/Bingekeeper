@@ -40,7 +40,7 @@ let activeTab = 'All';
 let adminSocialData = null;
 let adminAnalyticsData = null;
 let authConfig = { turnstileSiteKey: '' };
-let pushConfig = { supported: false, vapidPublicKey: '' };
+let pushConfig = { supported: false, vapidPublicKey: '', expectedServiceWorkerVersion: '' };
 let pushState = { available: false, permission: 'default', enabled: false, endpoint: '' };
 let deferredInstallPrompt = null;
 const turnstileWidgets = { register: null, forgot: null };
@@ -160,14 +160,14 @@ async function loadPushConfig() {
   if (!section) return;
 
   if (!pushState.available) {
-    pushConfig = { supported: false, vapidPublicKey: '' };
+    pushConfig = { supported: false, vapidPublicKey: '', expectedServiceWorkerVersion: '' };
     renderPushSettings();
     return;
   }
 
   const res = await api('/api/push/config', 'GET');
   if (res.error) {
-    pushConfig = { supported: false, vapidPublicKey: '' };
+    pushConfig = { supported: false, vapidPublicKey: '', expectedServiceWorkerVersion: '' };
     renderPushSettings('Notification settings could not be loaded.');
     return;
   }
@@ -183,6 +183,7 @@ async function loadPushConfig() {
     pushState.endpoint = '';
   }
   renderPushSettings();
+  await loadPushDiagnostics(false);
 }
 function renderPushSettings(message = '') {
   const section = document.getElementById('pushSettingsSection');
@@ -218,12 +219,12 @@ function renderPushSettings(message = '') {
 
   if (pushState.enabled) {
     copy.textContent = message || notificationHelpText('Browser notifications are enabled on this device. Email reminders remain available as fallback.');
-    actions.innerHTML = '<button class="btn-secondary" onclick="sendTestPush()">Send test</button><button class="btn-ghost" onclick="disablePushNotifications()">Disable</button>';
+    actions.innerHTML = '<button class="btn-secondary" onclick="sendTestPush()">Send encrypted test</button><button class="btn-secondary" onclick="resetPushNotifications()">Reset this device</button><button class="btn-ghost" onclick="loadPushDiagnostics()">Diagnostics</button><button class="btn-ghost" onclick="disablePushNotifications()">Disable</button>';
     return;
   }
 
   copy.textContent = message || 'Turn on browser notifications to get alerts on this device when tracked shows have new episodes or seasons.';
-  actions.innerHTML = '<button class="btn-primary" onclick="enablePushNotifications()">Enable notifications</button>';
+  actions.innerHTML = '<button class="btn-primary" onclick="enablePushNotifications()">Enable notifications</button><button class="btn-ghost" onclick="loadPushDiagnostics()">Diagnostics</button>';
 }
 async function enablePushNotifications() {
   if (!pushState.available || !pushConfig.supported) {
@@ -263,6 +264,70 @@ async function enablePushNotifications() {
     renderPushSettings('Could not enable notifications. Please refresh and try again.');
   }
 }
+async function resetPushNotifications() {
+  if (!pushState.available || !pushConfig.supported) {
+    renderPushSettings('Push notifications are not available right now.');
+    return;
+  }
+  if (pushState.permission === 'denied') {
+    renderPushSettings('Notifications are blocked in this browser. Enable them in browser or site settings, then reload BingeKeeper.');
+    return;
+  }
+  if (isIos() && !isStandaloneApp()) {
+    renderPushSettings();
+    return;
+  }
+
+  try {
+    renderPushSettings('Resetting notifications on this device...');
+    const permission = pushState.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+    pushState.permission = permission;
+    if (permission !== 'granted') {
+      renderPushSettings('Notifications were not enabled. You can try again later from this device.');
+      return;
+    }
+
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    let oldEndpoint = pushState.endpoint;
+    for (const registration of registrations) {
+      const subscription = await registration.pushManager.getSubscription().catch(() => null);
+      if (subscription) {
+        oldEndpoint = oldEndpoint || subscription.endpoint;
+        await subscription.unsubscribe().catch(() => {});
+      }
+      await registration.unregister().catch(() => {});
+    }
+    if (oldEndpoint) await api('/api/push/subscribe', 'DELETE', { endpoint: oldEndpoint });
+
+    const registration = await navigator.serviceWorker.register('/sw.js');
+    await registration.update().catch(() => {});
+    const readyRegistration = await navigator.serviceWorker.ready;
+    const subscription = await readyRegistration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(pushConfig.vapidPublicKey)
+    });
+    const save = await api('/api/push/subscribe', 'POST', { subscription: subscription.toJSON() });
+    if (save.error) {
+      await subscription.unsubscribe().catch(() => {});
+      renderPushSettings(save.error);
+      return;
+    }
+
+    pushState.enabled = true;
+    pushState.endpoint = subscription.endpoint;
+    const test = await api('/api/push/test', 'POST');
+    await loadPushDiagnostics(false);
+    if (test.error) {
+      renderPushSettings(test.error);
+      toast(test.error);
+      return;
+    }
+    renderPushSettings('Notifications were reset and an encrypted test push was accepted by the push service.');
+    toast('Notifications reset. Watch for the test notification.');
+  } catch {
+    renderPushSettings('Could not reset notifications. Reload BingeKeeper and try again.');
+  }
+}
 async function disablePushNotifications() {
   try {
     const registration = await navigator.serviceWorker.ready;
@@ -292,7 +357,53 @@ async function sendTestPush() {
   parts.push(`service worker display: ${local.serviceWorker ? 'ok' : 'not shown'}`);
   const message = notificationHelpText(parts.join('. ') + '.');
   renderPushSettings(message);
+  await loadPushDiagnostics(false);
   toast(sent ? 'Push test complete. Check the notification panel for details.' : message);
+}
+async function loadPushDiagnostics(showToast = true) {
+  const el = document.getElementById('pushDiagnostics');
+  if (!el || !token) return;
+  const [res, sw] = await Promise.all([
+    api('/api/push/diagnostics', 'GET'),
+    getServiceWorkerVersion()
+  ]);
+  if (res.error) {
+    el.classList.remove('hidden');
+    el.innerHTML = `<strong>Diagnostics:</strong> ${esc(res.error)}`;
+    if (showToast) toast(res.error);
+    return;
+  }
+  const vapid = [
+    `public ${res.vapid_public_key_exists ? 'ok' : 'missing'}`,
+    `private ${res.vapid_private_key_exists ? 'ok' : 'missing'}`,
+    `subject ${res.vapid_subject_exists ? 'ok' : 'missing'}`
+  ].join(', ');
+  const origins = res.endpoint_origins?.length ? res.endpoint_origins.join(', ') : 'none';
+  const failure = res.last_failure_status ? `${res.last_failure_status} - ${res.last_failure_reason || 'Unknown failure'}` : 'none recorded';
+  const actualVersion = sw.version || 'unknown';
+  const expectedVersion = res.expected_service_worker_version || pushConfig.expectedServiceWorkerVersion || 'unknown';
+  el.classList.remove('hidden');
+  el.innerHTML = `<strong>Diagnostics:</strong> VAPID ${esc(vapid)}. Active subscriptions: ${Number(res.active_subscription_count || 0)}. Endpoint origins: ${esc(origins)}. Last failure: ${esc(failure)}. Service worker: ${esc(actualVersion)} expected ${esc(expectedVersion)}.`;
+  if (showToast) toast('Push diagnostics updated.');
+}
+async function getServiceWorkerVersion() {
+  if (!('serviceWorker' in navigator)) return { version: 'unsupported' };
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const worker = registration.active || navigator.serviceWorker.controller;
+    if (!worker) return { version: 'not active' };
+    return await new Promise(resolve => {
+      const channel = new MessageChannel();
+      const timer = setTimeout(() => resolve({ version: 'no response' }), 1200);
+      channel.port1.onmessage = event => {
+        clearTimeout(timer);
+        resolve(event.data || { version: 'unknown' });
+      };
+      worker.postMessage({ type: 'GET_VERSION' }, [channel.port2]);
+    });
+  } catch {
+    return { version: 'unavailable' };
+  }
 }
 function notificationHelpText(message) {
   return `${message} Not seeing alerts? Make sure Chrome notifications are enabled in your device settings.`;
@@ -997,7 +1108,7 @@ function accountPushHtml() {
 function accountPushActionsHtml() {
   if (!pushState.available || !pushConfig.supported || pushState.permission === 'denied') return '';
   if (isIos() && !isStandaloneApp()) return '<button class="btn-cancel" onclick="installApp()">Install app for iOS notifications</button>';
-  if (pushState.enabled) return '<button class="btn-cancel" onclick="sendTestPush()">Send test notification</button><button class="btn-cancel" onclick="disablePushNotifications().then(openAccount)">Disable notifications</button>';
+  if (pushState.enabled) return '<button class="btn-cancel" onclick="sendTestPush()">Send test notification</button><button class="btn-cancel" onclick="resetPushNotifications().then(openAccount)">Reset notifications on this device</button><button class="btn-cancel" onclick="disablePushNotifications().then(openAccount)">Disable notifications</button>';
   return '<button class="btn-save" onclick="enablePushNotifications().then(openAccount)">Enable notifications</button>';
 }
 function accountReferralHtml() {

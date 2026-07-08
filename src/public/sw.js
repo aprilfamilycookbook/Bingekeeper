@@ -1,9 +1,10 @@
-const CACHE_NAME = 'bingekeeper-pwa-v8';
+const SW_VERSION = 'bingekeeper-sw-v9';
+const CACHE_NAME = 'bingekeeper-pwa-v9';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/css/style.css',
-  '/js/app.js?v=admin-analytics-v1',
+  '/js/app.js?v=push-diagnostics-v1',
   '/manifest.webmanifest',
   '/images/logo.png',
   '/images/dashboard-preview.png',
@@ -81,6 +82,15 @@ self.addEventListener('push', event => {
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('message', event => {
+  if (event.data?.type !== 'GET_VERSION') return;
+  event.ports?.[0]?.postMessage({
+    type: 'SW_VERSION',
+    version: SW_VERSION,
+    cacheName: CACHE_NAME
+  });
 });
 
 self.addEventListener('notificationclick', event => {

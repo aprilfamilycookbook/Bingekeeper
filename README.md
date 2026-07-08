@@ -92,4 +92,4 @@ PWA push notifications use the Web Push API. Generate VAPID keys with:
 npx web-push generate-vapid-keys --json
 ```
 
-Set `VAPID_PUBLIC_KEY` as a Worker variable or secret, set `VAPID_PRIVATE_KEY` as a Cloudflare Worker secret, and set `VAPID_SUBJECT` to a contact URI such as `mailto:hello@bingekeeper.tv`. Browser push subscriptions are stored per user/device in `push_subscriptions`. Android Chrome supports browser/PWA notifications. iOS Safari support requires the user to install BingeKeeper to the Home Screen and enable notifications from the installed app.
+Set `VAPID_PUBLIC_KEY` as a Worker variable or secret, set `VAPID_PRIVATE_KEY` as a Cloudflare Worker secret, and set `VAPID_SUBJECT` to a contact URI such as `mailto:hello@bingekeeper.tv`. Browser push subscriptions are stored per user/device in `push_subscriptions`. Android Chrome supports browser/PWA notifications. iOS Safari support requires the user to install BingeKeeper to the Home Screen and enable notifications from the installed app. The push settings panel includes an encrypted test push, diagnostics from `/api/push/diagnostics`, and a reset option that rebuilds the current device subscription.

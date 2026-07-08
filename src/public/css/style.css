@@ -827,7 +827,8 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.5rem; }
   font-size: 14px;
 }
 .push-settings {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
@@ -851,6 +852,21 @@ main { max-width: 1180px; margin: 0 auto; padding: 1.5rem; }
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
+}
+.push-diagnostics {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  color: var(--text2);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.push-diagnostics.hidden {
+  display: none;
+}
+.push-diagnostics strong {
+  color: var(--text);
 }
 .referral-card {
   display: flex;
@@ -1593,6 +1609,8 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); c
   .plus-banner,
   .push-settings,
   .referral-card { align-items: stretch; flex-direction: column; }
+  .push-settings { grid-template-columns: 1fr; }
+  .push-diagnostics { grid-column: auto; }
   .referral-actions { grid-template-columns: 1fr; min-width: 0; }
   .referral-actions .btn-secondary { width: 100%; }
   .push-actions { justify-content: stretch; }

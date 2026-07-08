@@ -41,6 +41,10 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   auth TEXT NOT NULL,
   user_agent TEXT,
   enabled INTEGER DEFAULT 1,
+  last_success_at INTEGER,
+  last_failure_at INTEGER,
+  last_failure_status INTEGER,
+  last_failure_reason TEXT,
   created_at INTEGER DEFAULT (unixepoch()),
   updated_at INTEGER DEFAULT (unixepoch()),
   FOREIGN KEY (user_id) REFERENCES users(id)
