@@ -226,6 +226,15 @@ function renderPushSettings(message = '') {
   copy.textContent = message || 'Turn on browser notifications to get alerts on this device when tracked shows have new episodes or seasons.';
   actions.innerHTML = '<button class="btn-primary" onclick="enablePushNotifications()">Turn on notifications</button><button class="btn-ghost" onclick="loadPushDiagnostics()">Advanced details</button>';
 }
+async function getCurrentPushSubscription() {
+  if (!pushState.available) return null;
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    return await registration.pushManager.getSubscription();
+  } catch {
+    return null;
+  }
+}
 async function enablePushNotifications() {
   if (!pushState.available || !pushConfig.supported) {
     renderPushSettings('Push notifications are not available right now.');
@@ -245,7 +254,8 @@ async function enablePushNotifications() {
     }
 
     const registration = await navigator.serviceWorker.ready;
-    const subscription = await registration.pushManager.subscribe({
+    const existing = await registration.pushManager.getSubscription().catch(() => null);
+    const subscription = existing || await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(pushConfig.vapidPublicKey)
     });
@@ -288,16 +298,18 @@ async function resetPushNotifications() {
     }
 
     const registrations = await navigator.serviceWorker.getRegistrations();
-    let oldEndpoint = pushState.endpoint;
+    const oldEndpoints = new Set(pushState.endpoint ? [pushState.endpoint] : []);
     for (const registration of registrations) {
       const subscription = await registration.pushManager.getSubscription().catch(() => null);
       if (subscription) {
-        oldEndpoint = oldEndpoint || subscription.endpoint;
+        oldEndpoints.add(subscription.endpoint);
         await subscription.unsubscribe().catch(() => {});
       }
       await registration.unregister().catch(() => {});
     }
-    if (oldEndpoint) await api('/api/push/subscribe', 'DELETE', { endpoint: oldEndpoint });
+    for (const endpoint of oldEndpoints) {
+      await api('/api/push/subscribe', 'DELETE', { endpoint });
+    }
 
     const registration = await navigator.serviceWorker.register('/sw.js');
     await registration.update().catch(() => {});
@@ -315,7 +327,7 @@ async function resetPushNotifications() {
 
     pushState.enabled = true;
     pushState.endpoint = subscription.endpoint;
-    const test = await api('/api/push/test', 'POST');
+    const test = await api('/api/push/test', 'POST', { endpoint: subscription.endpoint });
     await loadPushDiagnostics(false);
     if (test.error) {
       renderPushSettings(test.error);
@@ -344,18 +356,22 @@ async function disablePushNotifications() {
   }
 }
 async function sendTestPush() {
-  const res = await api('/api/push/test', 'POST');
+  const subscription = await getCurrentPushSubscription();
+  if (!subscription) {
+    pushState.enabled = false;
+    pushState.endpoint = '';
+    renderPushSettings('Notifications are not enabled on this device. Tap Turn on notifications to try again.');
+    return;
+  }
+  pushState.enabled = true;
+  pushState.endpoint = subscription.endpoint;
+  const res = await api('/api/push/test', 'POST', { endpoint: subscription.endpoint });
   if (res.error) { renderPushSettings(res.error); toast(res.error); return; }
   const local = await showLocalTestNotification();
-  const attempted = Number(res.attempted || res.sent || 1);
   const sent = Number(res.sent || 0);
-  const failed = Number(res.failed?.length || Math.max(0, attempted - sent));
-  const parts = [`Server push accepted for ${sent} of ${attempted} ${plural(attempted, 'device')}`];
-  if (failed) parts.push(`${failed} failed`);
-  parts.push(`permission: ${Notification.permission}`);
-  parts.push(`direct display: ${local.direct ? 'ok' : 'not shown'}`);
-  parts.push(`service worker display: ${local.serviceWorker ? 'ok' : 'not shown'}`);
-  const message = notificationHelpText(parts.join('. ') + '.');
+  const message = local.direct || local.serviceWorker
+    ? 'Test notification sent. If you did not see it, check this device notification settings.'
+    : 'Test sent, but this device did not show a local notification. Check this device notification settings or tap Fix notifications.';
   renderPushSettings(message);
   await loadPushDiagnostics(false);
   toast(sent ? 'Test notification sent.' : message);
@@ -363,8 +379,14 @@ async function sendTestPush() {
 async function loadPushDiagnostics(showToast = true) {
   const el = document.getElementById('pushDiagnostics');
   if (!el || !token) return;
+  const subscription = await getCurrentPushSubscription();
+  const endpoint = subscription?.endpoint || pushState.endpoint || '';
+  if (subscription) {
+    pushState.enabled = true;
+    pushState.endpoint = subscription.endpoint;
+  }
   const [res, sw] = await Promise.all([
-    api('/api/push/diagnostics', 'GET'),
+    api(`/api/push/diagnostics${endpoint ? `?endpoint=${encodeURIComponent(endpoint)}` : ''}`, 'GET'),
     getServiceWorkerVersion()
   ]);
   if (res.error) {
@@ -380,11 +402,20 @@ async function loadPushDiagnostics(showToast = true) {
   ].join(', ');
   const origins = res.endpoint_origins?.length ? res.endpoint_origins.join(', ') : 'none';
   const failure = res.last_failure_status ? `${res.last_failure_status} - ${res.last_failure_reason || 'Unknown failure'}` : 'none recorded';
+  const lastSuccess = res.last_success_at ? formatTimestamp(res.last_success_at) : 'none recorded';
+  const currentDevice = res.current_device_subscription_exists
+    ? (res.current_device_subscription_enabled ? 'saved and active' : 'saved but off')
+    : 'not saved';
   const actualVersion = sw.version || 'unknown';
   const expectedVersion = res.expected_service_worker_version || pushConfig.expectedServiceWorkerVersion || 'unknown';
   el.classList.remove('hidden');
-  el.innerHTML = `<strong>Diagnostics:</strong> VAPID ${esc(vapid)}. Active subscriptions: ${Number(res.active_subscription_count || 0)}. Endpoint origins: ${esc(origins)}. Last failure: ${esc(failure)}. Service worker: ${esc(actualVersion)} expected ${esc(expectedVersion)}.`;
+  el.innerHTML = `<strong>Diagnostics:</strong> VAPID ${esc(vapid)}. Current device: ${esc(currentDevice)}. Active subscriptions: ${Number(res.active_subscription_count || 0)}. Endpoint origins: ${esc(origins)}. Last success: ${esc(lastSuccess)}. Last failure: ${esc(failure)}. Service worker: ${esc(actualVersion)} expected ${esc(expectedVersion)}.`;
   if (showToast) toast('Push diagnostics updated.');
+}
+function formatTimestamp(value) {
+  const date = new Date(Number(value) * 1000);
+  if (Number.isNaN(date.getTime())) return 'unknown';
+  return date.toLocaleString();
 }
 async function getServiceWorkerVersion() {
   if (!('serviceWorker' in navigator)) return { version: 'unsupported' };

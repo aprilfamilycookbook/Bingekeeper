@@ -1,6 +1,6 @@
 import { verifyJWT } from './auth.js';
 
-const EXPECTED_SERVICE_WORKER_VERSION = 'bingekeeper-sw-v10';
+const EXPECTED_SERVICE_WORKER_VERSION = 'bingekeeper-sw-v11';
 
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
@@ -45,10 +45,13 @@ export async function handlePush(request, env, path) {
 
   if (path === '/api/push/test' && request.method === 'POST') {
     await ensurePushDiagnosticsColumns(env);
+    const { endpoint } = await request.json().catch(() => ({}));
     const result = await sendPushToUser(env, user.userId, {
       title: 'BingeKeeper notifications are on',
       body: 'You will get alerts when tracked shows have new episodes or seasons.',
       url: '/'
+    }, {
+      endpoint
     });
     if (!result.sent) return jsonResponse({ error: result.error || 'No active push subscriptions found' }, 400);
     return jsonResponse({
@@ -61,6 +64,7 @@ export async function handlePush(request, env, path) {
 
   if (path === '/api/push/diagnostics' && request.method === 'GET') {
     await ensurePushDiagnosticsColumns(env);
+    const currentEndpoint = new URL(request.url).searchParams.get('endpoint') || '';
     const rows = await env.DB.prepare(`
       SELECT endpoint, enabled, last_success_at, last_failure_at, last_failure_status, last_failure_reason
       FROM push_subscriptions
@@ -72,6 +76,12 @@ export async function handlePush(request, env, path) {
     const lastFailure = subscriptions
       .filter(sub => sub.last_failure_at)
       .sort((a, b) => Number(b.last_failure_at || 0) - Number(a.last_failure_at || 0))[0] || null;
+    const lastSuccess = subscriptions
+      .filter(sub => sub.last_success_at)
+      .sort((a, b) => Number(b.last_success_at || 0) - Number(a.last_success_at || 0))[0] || null;
+    const currentSubscription = currentEndpoint
+      ? subscriptions.find(sub => sub.endpoint === currentEndpoint) || null
+      : null;
 
     return jsonResponse({
       vapid_public_key_exists: Boolean(env.VAPID_PUBLIC_KEY),
@@ -79,6 +89,9 @@ export async function handlePush(request, env, path) {
       vapid_subject_exists: Boolean(env.VAPID_SUBJECT),
       active_subscription_count: activeSubscriptions.length,
       endpoint_origins: [...new Set(activeSubscriptions.map(sub => endpointOrigin(sub.endpoint)).filter(Boolean))],
+      current_device_subscription_exists: Boolean(currentSubscription),
+      current_device_subscription_enabled: Boolean(currentSubscription && Number(currentSubscription.enabled) === 1),
+      last_success_at: lastSuccess?.last_success_at || null,
       last_failure_status: lastFailure?.last_failure_status || null,
       last_failure_reason: lastFailure?.last_failure_reason || null,
       last_failure_at: lastFailure?.last_failure_at || null,
@@ -93,7 +106,10 @@ export async function sendPushToUser(env, userId, payload, options = {}) {
   if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY) return { sent: 0, error: 'Push is not configured' };
 
   await ensurePushDiagnosticsColumns(env);
-  const rows = await env.DB.prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ? AND enabled = 1').bind(userId).all();
+  const endpointFilter = options.endpoint || '';
+  const rows = endpointFilter
+    ? await env.DB.prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ? AND endpoint = ? AND enabled = 1').bind(userId, endpointFilter).all()
+    : await env.DB.prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ? AND enabled = 1').bind(userId).all();
   let sent = 0;
   const failed = [];
   const subscriptions = rows.results || [];
