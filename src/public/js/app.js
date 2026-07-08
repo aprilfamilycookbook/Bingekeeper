@@ -1160,21 +1160,26 @@ function weeklyRoundupItems() {
     .filter((item, index, items) => items.findIndex(other => other.show_id === item.show_id) === index);
 }
 async function copyText(text, message = 'Copied Facebook post.') {
+  let copied = false;
   try {
     await navigator.clipboard.writeText(text);
-    toast(message);
+    copied = true;
   } catch {
     const textarea = document.createElement('textarea');
     textarea.value = text;
     textarea.setAttribute('readonly', '');
     textarea.style.position = 'fixed';
+    textarea.style.top = '-1000px';
+    textarea.style.left = '-1000px';
     textarea.style.opacity = '0';
     document.body.appendChild(textarea);
+    textarea.focus();
     textarea.select();
-    document.execCommand('copy');
+    copied = document.execCommand('copy');
     textarea.remove();
-    toast(message);
   }
+  toast(copied ? message : 'Copy failed. Please try again.');
+  return copied;
 }
 function accountPushHtml() {
   if (!pushState.available) return '<div><span>Browser notifications</span><strong>Not supported on this browser</strong></div>';
