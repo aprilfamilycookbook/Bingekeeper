@@ -643,8 +643,43 @@ function openRecommendationAdd(source, index) {
   openAddShow(show);
 }
 function openAddShow(show) {
+  addShowWithDefaults(show);
+}
+async function addShowWithDefaults(show) {
+  if (!show) { toast('Search again and choose a show.'); return; }
+  const existingIndex = findWatchlistIndex(show.id);
+  if (existingIndex >= 0) {
+    toast('Already tracking this show.', 'Edit', () => openEdit(existingIndex));
+    return;
+  }
+  const notifyPref = pushState.enabled ? 'two_days' : 'none';
+  const service = suggestedService(show);
+  const body = { show_id:show.id, name:show.name, poster_path:show.poster_path||null, overview:show.overview||null, first_air_date:show.first_air_date||null, status:'Watching', service, current_season:1, current_episode:1, notify:notifyPref !== 'none', notify_pref:notifyPref };
+  const res = await api('/api/watchlist', 'POST', body);
+  if (res.error) {
+    if (res.error.includes('Already')) {
+      await loadWatchlist();
+      const refreshedIndex = findWatchlistIndex(show.id);
+      toast('Already tracking this show.', refreshedIndex >= 0 ? 'Edit' : '', refreshedIndex >= 0 ? () => openEdit(refreshedIndex) : null);
+      return;
+    }
+    toast(res.error);
+    if (res.error.includes('Upgrade')) document.getElementById('plusBanner').classList.remove('hidden');
+    return;
+  }
+  closeSearch();
+  await loadWatchlist();
+  activeTab = 'All';
+  render();
+  const index = findWatchlistIndex(show.id);
+  toast('Added to your watchlist.', index >= 0 ? 'Edit' : '', index >= 0 ? () => openEdit(index) : null);
+}
+function findWatchlistIndex(showId) {
+  return watchlist.findIndex(w => Number(w.show_id) === Number(showId));
+}
+function openAddSetup(show) {
   pendingAddShow = show;
-  if (watchlist.find(w => w.show_id === show.id)) { toast('Already in your watchlist!'); return; }
+  if (findWatchlistIndex(show.id) >= 0) { toast('Already tracking this show.', 'Edit', () => openEdit(findWatchlistIndex(show.id))); return; }
   const service = suggestedService(show);
   document.getElementById('modalTitle').textContent = `Add "${show.name}"`;
   document.getElementById('modalBody').innerHTML = `<div class="form-group"><label>Status</label><select id="f-status">${STATUSES.map(s => `<option>${s}</option>`).join('')}</select></div><div class="form-group"><label>Streaming service</label><select id="f-service">${SERVICES.map(s => `<option${s===service?' selected':''}>${s}</option>`).join('')}</select>${show.providers?.length?`<div class="service-hint">Found on ${show.providers.map(esc).join(', ')}</div>`:''}</div><div class="form-row"><div class="form-group"><label>Season</label><input type="number" id="f-season" value="1" min="1" max="99"></div><div class="form-group"><label>Episode</label><input type="number" id="f-episode" value="1" min="1" max="999"></div></div><div class="form-group notify-row"><label for="f-notify-pref">Episode emails</label><select id="f-notify-pref">${notifyOptionsHtml('two_days')}</select></div><div class="modal-actions"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="confirmAdd()">Add to watchlist</button></div>`;
@@ -1195,7 +1230,24 @@ function normalizeNotifyPref(pref, notify) {
 function normalizeReferralCode(value) {
   return String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32);
 }
-function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(window._toastTimer); window._toastTimer = setTimeout(() => t.classList.add('hidden'), 2800); }
+function toast(msg, actionLabel = '', actionHandler = null) {
+  const t = document.getElementById('toast');
+  t.innerHTML = `<span>${esc(msg)}</span>`;
+  if (actionLabel && typeof actionHandler === 'function') {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'toast-action';
+    button.textContent = actionLabel;
+    button.onclick = () => {
+      t.classList.add('hidden');
+      actionHandler();
+    };
+    t.appendChild(button);
+  }
+  t.classList.remove('hidden');
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(() => t.classList.add('hidden'), actionLabel ? 5200 : 2800);
+}
 function showError(el, msg) { el.textContent = msg; el.classList.remove('hidden'); }
 function todayString() { return new Date().toISOString().slice(0,10); }
 function plural(count, word) { return count === 1 ? word : `${word}s`; }

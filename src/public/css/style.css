@@ -1518,10 +1518,23 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); c
   border-radius: 20px;
   font-size: 14px;
   z-index: 300;
-  pointer-events: none;
-  white-space: nowrap;
+  pointer-events: auto;
   box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(92vw, 520px);
 }
+.toast-action {
+  border: 0;
+  background: transparent;
+  color: var(--accent2);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.toast-action:hover { color: var(--text); }
 .toast.hidden { display: none; }
 
 @media (max-width: 600px) {
