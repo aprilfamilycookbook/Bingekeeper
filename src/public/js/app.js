@@ -1084,24 +1084,35 @@ function adminSocialItem(type, index) {
   return collections[type]?.[index];
 }
 function facebookPostText(item, type) {
+  const link = socialShareUrl(item, type);
   if (type === 'episode') {
-    return `📺 New Episode Alert\n\n${item.name}${item.season_number ? ` Season ${item.season_number}` : ''}${item.episode_number ? ` Episode ${item.episode_number}` : ''} is now available.\n\nAre you watching?\n\nTrack your favorite shows and never miss a new episode:\nhttps://bingekeeper.tv`;
+    return `📺 New Episode Alert\n\n${item.name}${item.season_number ? ` Season ${item.season_number}` : ''}${item.episode_number ? ` Episode ${item.episode_number}` : ''} is now available.\n\nAre you watching?\n\nTrack your favorite shows and never miss a new episode:\n${link}`;
   }
   if (type === 'upcoming') {
-    return `📺 Coming Soon\n\n${item.name}${item.season_number ? ` Season ${item.season_number}` : ''} arrives ${item.release_date ? formatAirDate(item.release_date) : 'soon'}.\n\nAre you watching?\n\nTrack your favorite shows and never miss a new episode:\nhttps://bingekeeper.tv`;
+    return `📺 Coming Soon\n\n${item.name}${item.season_number ? ` Season ${item.season_number}` : ''} arrives ${item.release_date ? formatAirDate(item.release_date) : 'soon'}.\n\nAre you watching?\n\nTrack your favorite shows and never miss a new episode:\n${link}`;
   }
-  return `📺 New Season Alert\n\n${item.name}${item.season_number ? ` Season ${item.season_number}` : ''} is now available.\n\nAre you watching?\n\nTrack your favorite shows and never miss a new episode:\nhttps://bingekeeper.tv`;
+  return `📺 New Season Alert\n\n${item.name}${item.season_number ? ` Season ${item.season_number}` : ''} is now available.\n\nAre you watching?\n\nTrack your favorite shows and never miss a new episode:\n${link}`;
 }
 function questionPostText(item, type) {
   const service = item.services?.[0] ? ` on ${item.services[0]}` : '';
   const season = item.season_number ? ` Season ${item.season_number}` : '';
+  const link = socialShareUrl(item, type);
   if (type === 'upcoming') {
-    return `${item.name}${season} arrives ${item.release_date ? formatAirDate(item.release_date) : 'soon'}${service}. Are you watching right away or waiting to binge the whole season?\n\nTrack your shows free:\nhttps://bingekeeper.tv`;
+    return `${item.name}${season} arrives ${item.release_date ? formatAirDate(item.release_date) : 'soon'}${service}. Are you watching right away or waiting to binge the whole season?\n\nTrack your shows free:\n${link}`;
   }
   if (type === 'episode') {
-    return `${item.name}${season}${item.episode_number ? ` Episode ${item.episode_number}` : ''} is now streaming${service}. Are you watching tonight or saving it for the weekend?\n\nTrack your shows free:\nhttps://bingekeeper.tv`;
+    return `${item.name}${season}${item.episode_number ? ` Episode ${item.episode_number}` : ''} is now streaming${service}. Are you watching tonight or saving it for the weekend?\n\nTrack your shows free:\n${link}`;
   }
-  return `${item.name}${season} is now streaming${service}. Are you watching immediately or waiting to binge the whole season?\n\nTrack your shows free:\nhttps://bingekeeper.tv`;
+  return `${item.name}${season} is now streaming${service}. Are you watching immediately or waiting to binge the whole season?\n\nTrack your shows free:\n${link}`;
+}
+function socialShareUrl(item, type = '') {
+  if (!item?.show_id) return 'https://bingekeeper.tv';
+  const url = new URL(`https://bingekeeper.tv/share/show/${item.show_id}`);
+  if (type) url.searchParams.set('type', type);
+  if (item.season_number) url.searchParams.set('season', item.season_number);
+  if (item.episode_number) url.searchParams.set('episode', item.episode_number);
+  if (item.release_date) url.searchParams.set('date', item.release_date);
+  return url.toString();
 }
 async function copyWeeklyRoundup() {
   const items = weeklyRoundupItems();

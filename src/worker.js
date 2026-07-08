@@ -5,6 +5,7 @@ import { handleCron } from './cron.js';
 import { handleBilling, handleStripeWebhook } from './billing.js';
 import { handleAdmin } from './admin.js';
 import { handlePush } from './push.js';
+import { handleShare } from './share.js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -23,7 +24,11 @@ export default {
 
     let response;
 
-    if (path === '/api/stripe/webhook') {
+    const shareResponse = path.startsWith('/share/show/') ? await handleShare(request, env, path) : null;
+
+    if (shareResponse) {
+      response = shareResponse;
+    } else if (path === '/api/stripe/webhook') {
       response = await handleStripeWebhook(request, env);
     } else if (path.startsWith('/auth/google/')) {
       response = await handleAuth(request, env, path);
