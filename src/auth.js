@@ -426,31 +426,41 @@ async function buildPublicUser(env, user) {
   const referralCode = await ensureReferralCode(env, user);
   const bonusSlots = Math.max(0, Number(user.referral_bonus_slots || 0));
   const freeShowLimit = Math.min(FREE_SHOW_REFERRAL_CAP, FREE_SHOW_BASE_LIMIT + bonusSlots);
+  const userPublic = publicUser(user, env);
+  const isFounder = userPublic.is_admin && userPublic.plan !== 'plus';
   return {
-    ...publicUser(user, env),
+    ...userPublic,
+    is_founder: isFounder,
     referral_code: referralCode,
     referral_url: `https://bingekeeper.tv/?ref=${encodeURIComponent(referralCode)}`,
     referral_bonus_slots: bonusSlots,
-    free_show_limit: freeShowLimit,
+    free_show_limit: isFounder ? null : freeShowLimit,
+    free_show_limit_label: isFounder ? 'Unlimited (Founder)' : String(freeShowLimit),
     free_show_base_limit: FREE_SHOW_BASE_LIMIT,
     free_show_referral_cap: FREE_SHOW_REFERRAL_CAP,
     referral_bonus_increment: REFERRAL_BONUS_SLOTS
   };
 }
 
-function publicUser(user, env) {
-  const adminEmails = String(env.ADMIN_EMAILS || '')
+function adminEmails(env) {
+  return String(env.ADMIN_EMAILS || '')
     .split(',')
     .map(email => email.trim().toLowerCase())
     .filter(Boolean);
+}
 
+function isAdminUser(user, env) {
+  return Boolean(user?.is_admin) || adminEmails(env).includes(String(user?.email || '').toLowerCase());
+}
+
+function publicUser(user, env) {
   return {
     id: user.id,
     email: user.email,
     name: user.name,
     plan: user.plan || 'free',
     subscription_status: user.subscription_status || null,
-    is_admin: Boolean(user.is_admin) || adminEmails.includes(String(user.email).toLowerCase())
+    is_admin: isAdminUser(user, env)
   };
 }
 
@@ -496,11 +506,17 @@ async function recordReferral(env, referralCode, referredUserId) {
 
 export async function getFreeShowLimitForUser(env, userId) {
   try {
-    const user = await env.DB.prepare('SELECT plan, referral_bonus_slots FROM users WHERE id = ?').bind(userId).first();
+    const user = await env.DB.prepare('SELECT email, plan, referral_bonus_slots, is_admin FROM users WHERE id = ?').bind(userId).first();
     if ((user?.plan || 'free') === 'plus') return { isPlus: true, limit: null };
+    if (isAdminUser(user, env)) return { isPlus: false, isFounder: true, limit: null };
     const bonusSlots = Math.max(0, Number(user?.referral_bonus_slots || 0));
     return { isPlus: false, limit: Math.min(FREE_SHOW_REFERRAL_CAP, FREE_SHOW_BASE_LIMIT + bonusSlots) };
   } catch {
+    try {
+      const user = await env.DB.prepare('SELECT email, plan FROM users WHERE id = ?').bind(userId).first();
+      if ((user?.plan || 'free') === 'plus') return { isPlus: true, limit: null };
+      if (isAdminUser(user, env)) return { isPlus: false, isFounder: true, limit: null };
+    } catch {}
     return { isPlus: false, limit: FREE_SHOW_BASE_LIMIT };
   }
 }

@@ -773,9 +773,10 @@ function renderDashboard() {
   const watching = watchlist.filter(s => s.status === 'Watching').length;
   const upcoming = watchlist.filter(s => s.next_episode_date && s.next_episode_date >= todayString()).sort((a,b) => a.next_episode_date.localeCompare(b.next_episode_date));
   const isPlus = currentUser?.plan === 'plus';
+  const isFounder = isFounderAccount();
   const freeLimit = currentUser?.free_show_limit || 10;
-  document.getElementById('plusBanner').classList.toggle('hidden', isPlus || watchlist.length < Math.max(1, freeLimit - 2));
-  document.querySelector('#plusBanner p:not(.eyebrow)').textContent = `Free accounts can track ${freeLimit} shows${freeLimit < 25 ? ', with referral bonuses up to 25' : ''}. Upgrade when your queue gets serious.`;
+  document.getElementById('plusBanner').classList.toggle('hidden', isPlus || isFounder || watchlist.length < Math.max(1, freeLimit - 2));
+  if (!isFounder) document.querySelector('#plusBanner p:not(.eyebrow)').textContent = `Free accounts can track ${freeLimit} shows${freeLimit < 25 ? ', with referral bonuses up to 25' : ''}. Upgrade when your queue gets serious.`;
   renderReferralCard();
   document.getElementById('dashboardGreeting').textContent = watchlist.length ? `Welcome back, ${currentUser.name}` : 'Start your watchlist';
   document.getElementById('dashboardSubcopy').textContent = watchlist.length ? `${watching} ${plural(watching, 'show')} in progress. ${upcoming.length} upcoming ${plural(upcoming.length, 'episode')} on the radar.` : 'Search for a show below to start your personal release calendar.';
@@ -795,14 +796,17 @@ function renderReferralCard() {
   const section = document.getElementById('referralSection');
   if (!section || !currentUser) return;
   const isPlus = currentUser.plan === 'plus';
-  const limit = currentUser.free_show_limit || 10;
+  const isFounder = isFounderAccount();
+  const limit = planLimitLabel();
   const cap = currentUser.free_show_referral_cap || 25;
   const link = currentUser.referral_url || `https://bingekeeper.tv/?ref=${encodeURIComponent(currentUser.referral_code || '')}`;
   section.classList.toggle('hidden', isPlus || !currentUser.referral_code);
   const input = document.getElementById('referralLink');
   if (input) input.value = link;
   const copy = document.getElementById('referralCopy');
-  if (copy) copy.textContent = `You can track ${limit} free ${plural(limit, 'show')}. Share your invite link. When a friend joins and adds their first show, you both get 5 extra slots, up to ${cap} free shows.`;
+  if (copy) copy.textContent = isFounder
+    ? `You can track ${limit}. Share your invite link. Referral limits still apply to normal users.`
+    : `You can track ${limit} free ${plural(limit, 'show')}. Share your invite link. When a friend joins and adds their first show, you both get 5 extra slots, up to ${cap} free shows.`;
 }
 async function loadDashboardRecommendations() {
   const loadToken = ++recommendationLoadToken;
@@ -915,7 +919,7 @@ function renderRecommendationSkeletonCards(count) {
 }
 function syncBillingUi() {
   const isPlus = currentUser?.plan === 'plus';
-  document.getElementById('planBadge').textContent = isPlus ? 'Plus' : 'Free';
+  document.getElementById('planBadge').textContent = isPlus ? 'Plus' : (isFounderAccount() ? 'Founder' : 'Free');
   document.getElementById('planBadge').classList.toggle('is-plus', isPlus);
   document.getElementById('billingBtn').textContent = isPlus ? 'Manage Plus' : 'Upgrade';
 }
@@ -1195,14 +1199,16 @@ function accountPushActionsHtml() {
 }
 function accountReferralHtml() {
   if (!currentUser?.referral_code) return '';
-  const limit = currentUser.free_show_limit || 10;
+  const limit = planLimitLabel();
   const link = currentUser.referral_url || `https://bingekeeper.tv/?ref=${encodeURIComponent(currentUser.referral_code)}`;
-  return `<div><span>Invite link</span><strong>${esc(link)}</strong><small>Free slots: ${watchlist.length} of ${limit}</small></div>`;
+  const limitCopy = isFounderAccount() ? limit : `Free slots: ${watchlist.length} of ${limit}`;
+  return `<div><span>Invite link</span><strong>${esc(link)}</strong><small>${esc(limitCopy)}</small></div>`;
 }
 function openAccount() {
   const isPlus = currentUser?.plan === 'plus';
+  const planLabel = isPlus ? 'Plus' : (isFounderAccount() ? 'Unlimited (Founder)' : 'Free');
   document.getElementById('modalTitle').textContent = 'Account';
-  document.getElementById('modalBody').innerHTML = `<div class="account-panel"><div><span>Name</span><strong>${esc(currentUser.name)}</strong></div><div><span>Email</span><strong>${esc(currentUser.email)}</strong></div><div><span>Plan</span><strong>${isPlus ? 'Plus' : 'Free'}</strong></div>${accountReferralHtml()}${accountPushHtml()}</div><div class="modal-actions stacked"><button class="btn-save" onclick="openBilling()">${isPlus ? 'Manage Plus' : 'Upgrade to Plus'}</button>${currentUser?.referral_code ? '<button class="btn-cancel" onclick="copyReferralLink()">Copy invite link</button>' : ''}${accountPushActionsHtml()}<button class="btn-cancel" onclick="closeModal()">Close</button><button class="btn-danger" onclick="deleteAccount()">Delete account</button></div>`;
+  document.getElementById('modalBody').innerHTML = `<div class="account-panel"><div><span>Name</span><strong>${esc(currentUser.name)}</strong></div><div><span>Email</span><strong>${esc(currentUser.email)}</strong></div><div><span>Plan</span><strong>${esc(planLabel)}</strong></div>${accountReferralHtml()}${accountPushHtml()}</div><div class="modal-actions stacked"><button class="btn-save" onclick="openBilling()">${isPlus ? 'Manage Plus' : 'Upgrade to Plus'}</button>${currentUser?.referral_code ? '<button class="btn-cancel" onclick="copyReferralLink()">Copy invite link</button>' : ''}${accountPushActionsHtml()}<button class="btn-cancel" onclick="closeModal()">Close</button><button class="btn-danger" onclick="deleteAccount()">Delete account</button></div>`;
   openModal();
 }
 async function deleteAccount() {
@@ -1234,6 +1240,13 @@ function normalizeNotifyPref(pref, notify) {
 }
 function normalizeReferralCode(value) {
   return String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32);
+}
+function isFounderAccount() {
+  return Boolean(currentUser?.is_founder || (currentUser?.is_admin && currentUser?.plan !== 'plus'));
+}
+function planLimitLabel() {
+  if (isFounderAccount()) return 'Unlimited (Founder)';
+  return currentUser?.free_show_limit_label || String(currentUser?.free_show_limit || 10);
 }
 function toast(msg, actionLabel = '', actionHandler = null) {
   const t = document.getElementById('toast');

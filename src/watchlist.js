@@ -30,7 +30,7 @@ export async function handleWatchlist(request, env, path, ctx) {
     const preference = normalizeNotifyPref(notify_pref, notify);
     if (!show_id || !name) return jsonResponse({ error: 'show_id and name required' }, 400);
     const quota = await getFreeShowLimitForUser(env, user.userId);
-    if (!quota.isPlus) {
+    if (!quota.isPlus && !quota.isFounder) {
       const count = await env.DB.prepare('SELECT COUNT(*) as total FROM watchlist WHERE user_id = ?').bind(user.userId).first();
       if ((count?.total || 0) >= quota.limit) return jsonResponse({ error: `Free accounts can track up to ${quota.limit} shows. Invite friends for up to 25 free show slots or upgrade to Plus for unlimited tracking.` }, 402);
     }
