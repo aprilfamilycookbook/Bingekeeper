@@ -143,6 +143,7 @@ export async function handleAuth(request, env, path) {
     if (!auth || !auth.startsWith('Bearer ')) return jsonResponse({ error: 'Unauthorized' }, 401);
     const tokenUser = await verifyJWT(auth.slice(7), env.JWT_SECRET);
     if (!tokenUser) return jsonResponse({ error: 'Unauthorized' }, 401);
+    await env.DB.prepare('DELETE FROM notification_delivery_attempts WHERE user_id = ?').bind(tokenUser.userId).run().catch(() => null);
     await env.DB.prepare('DELETE FROM push_subscriptions WHERE user_id = ?').bind(tokenUser.userId).run();
     await env.DB.prepare('DELETE FROM notifications_sent WHERE user_id = ?').bind(tokenUser.userId).run();
     await env.DB.prepare('DELETE FROM watchlist WHERE user_id = ?').bind(tokenUser.userId).run();

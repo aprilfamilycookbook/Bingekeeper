@@ -1,10 +1,10 @@
-const SW_VERSION = 'bingekeeper-sw-v15';
-const CACHE_NAME = 'bingekeeper-pwa-v15';
+const SW_VERSION = 'bingekeeper-sw-v16';
+const CACHE_NAME = 'bingekeeper-pwa-v16';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/css/style.css',
-  '/js/app.js?v=founder-limit-v1',
+  '/js/app.js?v=push-audit-v1',
   '/manifest.webmanifest',
   '/images/logo.png',
   '/images/dashboard-preview.png',
@@ -76,13 +76,33 @@ self.addEventListener('push', event => {
     body: data.body || 'A tracked show has a new update.',
     icon: '/images/icons/icon-192.png',
     badge: '/images/icons/icon-192.png',
+    tag: data.test_id || data.episode_key || undefined,
+    renotify: Boolean(data.test_id || data.episode_key),
     data: {
-      url: data.url || '/'
+      url: data.url || '/',
+      test_id: data.test_id || null,
+      show_id: data.show_id || null,
+      episode_key: data.episode_key || null
     }
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil((async () => {
+    const receivedAck = acknowledgePush(data.ack_token, 'received');
+    await self.registration.showNotification(title, options);
+    await Promise.all([receivedAck, acknowledgePush(data.ack_token, 'displayed')]);
+  })());
 });
+
+async function acknowledgePush(token, stage) {
+  if (!token) return;
+  try {
+    await fetch('/api/push/ack', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, stage })
+    });
+  } catch {}
+}
 
 self.addEventListener('message', event => {
   if (event.data?.type !== 'GET_VERSION') return;

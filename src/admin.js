@@ -1,4 +1,5 @@
 import { verifyJWT } from './auth.js';
+import { ensureNotificationDeliverySchema, sendPushToUser } from './push.js';
 
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
@@ -69,6 +70,91 @@ export async function handleAdmin(request, env, path) {
     });
   }
 
+  if (path === '/api/admin/notifications/audit' && request.method === 'GET') {
+    await ensureNotificationDeliverySchema(env);
+    const attempts = await env.DB.prepare(`
+      SELECT
+        a.id,
+        a.test_id,
+        a.source,
+        a.user_id,
+        u.email,
+        a.show_id,
+        s.name AS show_name,
+        a.episode_key,
+        a.channel,
+        a.subscription_id,
+        a.device_id,
+        a.device,
+        a.attempted_at,
+        a.provider_status,
+        a.success,
+        a.failure_reason,
+        a.fallback_attempted,
+        a.notifications_sent_written,
+        a.sw_received_at,
+        a.sw_displayed_at
+      FROM notification_delivery_attempts a
+      LEFT JOIN users u ON u.id = a.user_id
+      LEFT JOIN shows s ON s.id = a.show_id
+      ORDER BY a.attempted_at DESC, a.id DESC
+      LIMIT 20
+    `).all();
+    const subscriptions = await activeNotificationSubscriptions(env);
+    return jsonResponse({
+      generated_at: new Date().toISOString(),
+      attempts: (attempts.results || []).map(redactAttempt),
+      active_subscriptions: subscriptions
+    });
+  }
+
+  if (path === '/api/admin/notifications/test' && request.method === 'POST') {
+    await ensureNotificationDeliverySchema(env);
+    const body = await request.json().catch(() => ({}));
+    const userId = Number(body.user_id || 0);
+    const subscriptionId = Number(body.subscription_id || 0);
+    if (!userId) return jsonResponse({ error: 'user_id is required' }, 400);
+    if (!subscriptionId) return jsonResponse({ error: 'subscription_id is required' }, 400);
+
+    const subscription = await env.DB.prepare(`
+      SELECT id, user_id, endpoint, enabled
+      FROM push_subscriptions
+      WHERE id = ? AND user_id = ? AND enabled = 1
+    `).bind(subscriptionId, userId).first();
+    if (!subscription) return jsonResponse({ error: 'Active subscription not found for that user' }, 404);
+
+    const testId = crypto.randomUUID();
+    const result = await sendPushToUser(env, userId, {
+      title: 'BingeKeeper remote push test',
+      body: `Remote encrypted test ${testId.slice(0, 8)}`,
+      url: '/',
+      test_id: testId
+    }, {
+      source: 'admin_test',
+      subscriptionId,
+      testId
+    });
+
+    console.log(JSON.stringify({
+      event: 'admin_remote_push_test',
+      test_id: testId,
+      admin_user_id: admin.id,
+      user_id: userId,
+      subscription_id: subscriptionId,
+      attempted: result.attempted,
+      sent: result.sent
+    }));
+
+    return jsonResponse({
+      test_id: testId,
+      accepted: result.sent > 0,
+      attempted: result.attempted,
+      sent: result.sent,
+      failed: result.failed,
+      error: result.error || ''
+    }, result.sent > 0 ? 200 : 502);
+  }
+
   if (path === '/api/admin/social' && request.method === 'GET') {
     const today = new Date().toISOString().slice(0, 10);
     const weekEnd = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
@@ -109,6 +195,110 @@ export async function handleAdmin(request, env, path) {
 async function countQuery(env, sql) {
   const row = await env.DB.prepare(sql).first();
   return Number(row?.total || 0);
+}
+
+async function activeNotificationSubscriptions(env) {
+  try {
+    const rows = await env.DB.prepare(`
+      SELECT
+        ps.id,
+        ps.user_id,
+        u.email,
+        ps.endpoint,
+        ps.user_agent,
+        ps.device_id,
+        ps.enabled,
+        ps.last_success_at,
+        ps.last_failure_at,
+        ps.last_failure_status,
+        ps.last_failure_reason,
+        ps.updated_at
+      FROM push_subscriptions ps
+      JOIN users u ON u.id = ps.user_id
+      WHERE ps.enabled = 1
+      ORDER BY ps.updated_at DESC
+      LIMIT 50
+    `).all();
+    return (rows.results || []).map(redactSubscription);
+  } catch {
+    const rows = await env.DB.prepare(`
+      SELECT
+        ps.id,
+        ps.user_id,
+        u.email,
+        ps.endpoint,
+        ps.user_agent,
+        NULL AS device_id,
+        ps.enabled,
+        ps.last_success_at,
+        ps.last_failure_at,
+        ps.last_failure_status,
+        ps.last_failure_reason,
+        ps.updated_at
+      FROM push_subscriptions ps
+      JOIN users u ON u.id = ps.user_id
+      WHERE ps.enabled = 1
+      ORDER BY ps.updated_at DESC
+      LIMIT 50
+    `).all();
+    return (rows.results || []).map(redactSubscription);
+  }
+}
+
+function redactAttempt(row) {
+  return {
+    id: row.id,
+    test_id: row.test_id || null,
+    source: row.source || null,
+    user_id: row.user_id,
+    email: row.email || null,
+    show_id: row.show_id || null,
+    show_name: row.show_name || null,
+    episode_key: row.episode_key || null,
+    channel: row.channel,
+    subscription_id: row.subscription_id || null,
+    device_id: row.device_id ? String(row.device_id).slice(0, 12) : null,
+    device: row.device || null,
+    attempted_at: row.attempted_at || null,
+    provider_status: row.provider_status || null,
+    success: Boolean(row.success),
+    failure_reason: row.failure_reason || null,
+    fallback_attempted: Boolean(row.fallback_attempted),
+    notifications_sent_written: Boolean(row.notifications_sent_written),
+    sw_received_at: row.sw_received_at || null,
+    sw_displayed_at: row.sw_displayed_at || null
+  };
+}
+
+function redactSubscription(row) {
+  return {
+    id: row.id,
+    user_id: row.user_id,
+    email: row.email || null,
+    endpoint_origin: endpointOrigin(row.endpoint),
+    device_id: row.device_id ? String(row.device_id).slice(0, 12) : null,
+    device: safeUserAgent(row.user_agent, row.device_id),
+    enabled: Boolean(row.enabled),
+    last_success_at: row.last_success_at || null,
+    last_failure_at: row.last_failure_at || null,
+    last_failure_status: row.last_failure_status || null,
+    last_failure_reason: row.last_failure_reason || null,
+    updated_at: row.updated_at || null
+  };
+}
+
+function endpointOrigin(endpoint) {
+  try {
+    return new URL(endpoint).origin;
+  } catch {
+    return '';
+  }
+}
+
+function safeUserAgent(userAgent, deviceId) {
+  const id = deviceId ? `device ${String(deviceId).slice(0, 8)}` : 'unknown device';
+  const ua = String(userAgent || '').replace(/\s+/g, ' ').slice(0, 120);
+  return ua ? `${id} - ${ua}` : id;
 }
 
 async function getTrackedShowMeta(env) {

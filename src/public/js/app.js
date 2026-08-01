@@ -259,7 +259,7 @@ async function enablePushNotifications() {
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(pushConfig.vapidPublicKey)
     });
-    const res = await api('/api/push/subscribe', 'POST', { subscription: subscription.toJSON() });
+    const res = await api('/api/push/subscribe', 'POST', { subscription: subscription.toJSON(), device_id: pushDeviceId() });
     if (res.error) {
       await subscription.unsubscribe().catch(() => {});
       renderPushSettings(res.error);
@@ -308,7 +308,7 @@ async function resetPushNotifications() {
       await registration.unregister().catch(() => {});
     }
     for (const endpoint of oldEndpoints) {
-      await api('/api/push/subscribe', 'DELETE', { endpoint });
+      await api('/api/push/subscribe', 'DELETE', { endpoint, device_id: pushDeviceId() });
     }
 
     const registration = await navigator.serviceWorker.register('/sw.js');
@@ -318,7 +318,7 @@ async function resetPushNotifications() {
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(pushConfig.vapidPublicKey)
     });
-    const save = await api('/api/push/subscribe', 'POST', { subscription: subscription.toJSON() });
+    const save = await api('/api/push/subscribe', 'POST', { subscription: subscription.toJSON(), device_id: pushDeviceId() });
     if (save.error) {
       await subscription.unsubscribe().catch(() => {});
       renderPushSettings(save.error);
@@ -346,7 +346,7 @@ async function disablePushNotifications() {
     const subscription = await registration.pushManager.getSubscription();
     const endpoint = subscription?.endpoint || pushState.endpoint;
     if (subscription) await subscription.unsubscribe();
-    await api('/api/push/subscribe', 'DELETE', endpoint ? { endpoint } : null);
+    await api('/api/push/subscribe', 'DELETE', endpoint ? { endpoint, device_id: pushDeviceId() } : { device_id: pushDeviceId() });
     pushState.enabled = false;
     pushState.endpoint = '';
     renderPushSettings('Notifications are disabled on this device.');
@@ -367,14 +367,11 @@ async function sendTestPush() {
   pushState.endpoint = subscription.endpoint;
   const res = await api('/api/push/test', 'POST', { endpoint: subscription.endpoint });
   if (res.error) { renderPushSettings(res.error); toast(res.error); return; }
-  const local = await showLocalTestNotification();
   const sent = Number(res.sent || 0);
-  const message = local.direct || local.serviceWorker
-    ? 'Test notification sent. If you did not see it, check this device notification settings.'
-    : 'Test sent, but this device did not show a local notification. Check this device notification settings or tap Fix notifications.';
-  renderPushSettings(message);
+  const testId = res.test_id ? ` Test ID ${res.test_id}.` : '';
+  renderPushSettings(`Remote push accepted by the provider.${testId} If it does not appear on this device, check Android and Chrome notification settings.`);
   await loadPushDiagnostics(false);
-  toast(sent ? 'Test notification sent.' : message);
+  toast(sent ? 'Remote push test sent.' : 'Remote push test failed.');
 }
 async function loadPushDiagnostics(showToast = true) {
   const el = document.getElementById('pushDiagnostics');
@@ -439,30 +436,14 @@ async function getServiceWorkerVersion() {
 function notificationHelpText(message) {
   return `${message} Not seeing alerts? Make sure Chrome notifications are enabled in your device settings.`;
 }
-async function showLocalTestNotification() {
-  const result = { direct: false, serviceWorker: false };
-  if (!pushState.available || Notification.permission !== 'granted') return result;
-  try {
-    const notification = new Notification('BingeKeeper direct browser test', {
-      body: 'If you see this, Chrome can show BingeKeeper notifications from the page.',
-      icon: '/images/icons/icon-192.png',
-      tag: 'bingekeeper-direct-test'
-    });
-    result.direct = true;
-    setTimeout(() => notification.close(), 6000);
-  } catch {}
-  try {
-    const registration = await navigator.serviceWorker.ready;
-    await registration.showNotification('BingeKeeper browser test', {
-      body: 'If you see this, this browser can display BingeKeeper notifications.',
-      icon: '/images/icons/icon-192.png',
-      badge: '/images/icons/icon-192.png',
-      tag: 'bingekeeper-local-test',
-      data: { url: '/' }
-    });
-    result.serviceWorker = true;
-  } catch {}
-  return result;
+function pushDeviceId() {
+  const key = 'bk_push_device_id';
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem(key, id);
+  }
+  return id;
 }
 function urlBase64ToUint8Array(value) {
   const padding = '='.repeat((4 - value.length % 4) % 4);

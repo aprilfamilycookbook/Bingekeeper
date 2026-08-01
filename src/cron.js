@@ -1,15 +1,48 @@
-import { sendPushToUser } from './push.js';
+import { markFallbackAttempted, markNotificationsSentWritten, recordNotificationAttempt, sendPushToUser } from './push.js';
 
 export async function handleCron(env) {
-  console.log('Running nightly notification check...');
+  const startedAt = Date.now();
+  const stats = { staleShows: 0, refreshedShows: 0, refreshFailures: 0, selectedUsers: 0, sent: 0, skipped: 0, failed: 0 };
+  console.log(JSON.stringify({ event: 'notification_cron_start', at: new Date().toISOString() }));
   const stale = await env.DB.prepare(`SELECT DISTINCT s.id FROM shows s JOIN watchlist w ON s.id = w.show_id WHERE w.notify = 1 AND s.last_checked < ?`).bind(Math.floor(Date.now() / 1000) - 43200).all();
-  for (const show of stale.results) { await checkShowForUpdates(show.id, env); await new Promise(r => setTimeout(r, 300)); }
-  const upcoming = await getUpcomingNotifications(env);
-  for (const item of upcoming.results.filter(shouldNotifyToday)) {
-    const episodeKey = `${item.show_id}-S${item.next_season_number}E${item.next_episode_number}`;
-    const alreadySent = await env.DB.prepare('SELECT id FROM notifications_sent WHERE user_id=? AND show_id=? AND episode_key=?').bind(item.user_id, item.show_id, episodeKey).first();
-    if (!alreadySent) { await sendReleaseNotification(env, item); await env.DB.prepare('INSERT INTO notifications_sent (user_id, show_id, episode_key) VALUES (?, ?, ?)').bind(item.user_id, item.show_id, episodeKey).run(); }
+  stats.staleShows = stale.results?.length || 0;
+  for (const show of stale.results || []) {
+    const refreshed = await checkShowForUpdates(show.id, env);
+    if (refreshed) stats.refreshedShows++;
+    else stats.refreshFailures++;
+    await new Promise(r => setTimeout(r, 150));
+    if (Date.now() - startedAt > 45000) {
+      console.warn(JSON.stringify({ event: 'notification_cron_refresh_budget_exhausted', stats }));
+      break;
+    }
   }
+  const upcoming = await getUpcomingNotifications(env);
+  const candidates = (upcoming.results || []).filter(shouldNotifyToday);
+  stats.selectedUsers = candidates.length;
+  for (const item of candidates) {
+    try {
+      const episodeKey = episodeKeyFor(item);
+      const alreadySent = await env.DB.prepare('SELECT id FROM notifications_sent WHERE user_id=? AND show_id=? AND episode_key=?').bind(item.user_id, item.show_id, episodeKey).first();
+      if (alreadySent) {
+        stats.skipped++;
+        continue;
+      }
+
+      const result = await sendReleaseNotification(env, item, episodeKey);
+      if (result.delivered) {
+        await env.DB.prepare('INSERT INTO notifications_sent (user_id, show_id, episode_key) VALUES (?, ?, ?)').bind(item.user_id, item.show_id, episodeKey).run();
+        await markNotificationsSentWritten(env, { user_id: item.user_id, show_id: item.show_id, episode_key: episodeKey });
+        stats.sent++;
+      } else {
+        stats.failed++;
+        console.warn(JSON.stringify({ event: 'notification_delivery_failed', user_id: item.user_id, show_id: item.show_id, episode_key: episodeKey, reason: result.reason }));
+      }
+    } catch (error) {
+      stats.failed++;
+      console.error(JSON.stringify({ event: 'notification_item_failed', user_id: item.user_id, show_id: item.show_id, error: error?.message || String(error) }));
+    }
+  }
+  console.log(JSON.stringify({ event: 'notification_cron_complete', duration_ms: Date.now() - startedAt, stats }));
 }
 
 async function getUpcomingNotifications(env) {
@@ -43,19 +76,51 @@ async function checkShowForUpdates(showId, env) {
     } catch {
       await env.DB.prepare(`UPDATE shows SET next_episode_date=?, next_season_number=?, next_episode_number=?, last_checked=? WHERE id=?`).bind(nextDate, nextSeason, nextEpisode, Math.floor(Date.now() / 1000), showId).run();
     }
-  } catch (e) { console.error(`Failed to check show ${showId}:`, e); }
+    return true;
+  } catch (e) {
+    console.error(JSON.stringify({ event: 'tmdb_show_refresh_failed', show_id: showId, error: e?.message || String(e) }));
+    return false;
+  }
 }
 
-async function sendReleaseNotification(env, item) {
+async function sendReleaseNotification(env, item, episodeKey) {
   const message = releaseMessage(item);
-  const pushResult = await sendPushToUser(env, item.user_id, {
-    title: message.subject,
-    body: message.body,
-    url: '/'
-  }).catch(error => ({ sent: 0, error: error?.message || 'Push failed' }));
+  const testId = crypto.randomUUID();
+  let pushResult;
+  try {
+    pushResult = await sendPushToUser(env, item.user_id, {
+      title: message.subject,
+      body: message.body,
+      url: '/',
+      show_id: item.show_id,
+      episode_key: episodeKey
+    }, {
+      source: 'scheduled',
+      showId: item.show_id,
+      episodeKey,
+      testId
+    });
+  } catch (error) {
+    const reason = error?.message || 'Push failed before provider response';
+    pushResult = { sent: 0, error: reason };
+    await recordNotificationAttempt(env, {
+      test_id: testId,
+      source: 'scheduled',
+      user_id: item.user_id,
+      show_id: item.show_id,
+      episode_key: episodeKey,
+      channel: 'push',
+      success: 0,
+      failure_reason: reason
+    });
+  }
 
-  if (pushResult.sent > 0) return;
-  await sendEmailNotification(env, item, message);
+  if (pushResult.sent > 0) return { delivered: true, channel: 'push', pushResult };
+
+  await markFallbackAttempted(env, { user_id: item.user_id, show_id: item.show_id, episode_key: episodeKey, test_id: testId });
+  const emailResult = await sendEmailNotification(env, item, message, episodeKey, true);
+  if (emailResult.success) return { delivered: true, channel: 'email', pushResult, emailResult };
+  return { delivered: false, channel: 'none', pushResult, emailResult, reason: emailResult.reason || pushResult.error || 'No delivery channel available' };
 }
 
 export function releaseMessage(item) {
@@ -71,11 +136,45 @@ export function releaseMessage(item) {
   };
 }
 
-async function sendEmailNotification(env, item, message) {
-  if (!item.notify_email) return;
-  if (!env.RESEND_API_KEY) return;
+async function sendEmailNotification(env, item, message, episodeKey, fallbackAttempted = false) {
+  const baseAttempt = {
+    source: 'scheduled',
+    user_id: item.user_id,
+    show_id: item.show_id,
+    episode_key: episodeKey,
+    channel: 'email',
+    fallback_attempted: fallbackAttempted ? 1 : 0
+  };
+  if (!item.notify_email) {
+    const reason = 'Email notifications disabled';
+    await recordNotificationAttempt(env, { ...baseAttempt, success: 0, failure_reason: reason });
+    return { attempted: false, success: false, reason };
+  }
+  if (!env.RESEND_API_KEY) {
+    const reason = 'Email provider is not configured';
+    await recordNotificationAttempt(env, { ...baseAttempt, success: 0, failure_reason: reason });
+    return { attempted: false, success: false, reason };
+  }
   const html = notificationEmailHtml(item, message);
-  await fetch('https://api.resend.com/emails', { method: 'POST', headers: { 'Authorization': `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: 'Bingekeeper <hello@bingekeeper.tv>', to: item.email, subject: message.subject, html }) });
+  try {
+    const response = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { 'Authorization': `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: 'Bingekeeper <hello@bingekeeper.tv>', to: item.email, subject: message.subject, html }) });
+    const failureBody = response.ok ? '' : await response.text().catch(() => '');
+    await recordNotificationAttempt(env, {
+      ...baseAttempt,
+      provider_status: response.status,
+      success: response.ok ? 1 : 0,
+      failure_reason: response.ok ? '' : (failureBody || 'Email provider rejected notification')
+    });
+    return { attempted: true, success: response.ok, status: response.status, reason: response.ok ? '' : (failureBody || 'Email provider rejected notification').slice(0, 220) };
+  } catch (error) {
+    const reason = error?.message || 'Email request failed';
+    await recordNotificationAttempt(env, { ...baseAttempt, provider_status: 0, success: 0, failure_reason: reason });
+    return { attempted: true, success: false, status: 0, reason };
+  }
+}
+
+function episodeKeyFor(item) {
+  return `${item.show_id}-S${item.next_season_number}E${item.next_episode_number}`;
 }
 
 export function notificationEmailHtml(item, message) {
